@@ -360,8 +360,8 @@ Alpine.data("work", (id, user, serverNote, photos, revision, editable) => ({
 Alpine.data('bookPicker', (books, initialType = 'assignment') => ({
   activityType: initialType,
   chooseType() {
-    if (this.activityType !== 'multiplication') return;
-    const defaults = {book_id:'',subject:'Math',title:'Multiplication practice',instructions:'Practice accurate recall, one fact at a time.',reference:'',minutes:5};
+    if (this.activityType === 'assignment') return;
+    const defaults = {book_id:'',subject:this.activityType==='spelling'?'Spelling':'Math',title:this.activityType==='spelling'?'Spelling practice':'Multiplication practice',instructions:this.activityType==='spelling'?'Look, listen, and choose. Practice this week’s words.':'Practice accurate recall, one fact at a time.',reference:'',minutes:5,question_target:''};
     for (const [field,value] of Object.entries(defaults)) {
       const input = this.$root.querySelector(`[name="${field}"]`);
       if (input) input.value = value;
@@ -379,7 +379,7 @@ Alpine.data('bookPicker', (books, initialType = 'assignment') => ({
     if (evidence) evidence.checked = book.requires_photo;
   }
 }));
-Alpine.data('multiplication', (config) => ({
+Alpine.data('practiceGame', (config) => ({
     version: config.version,
     summary: config.summary,
     approved: config.status === 'approved',
@@ -392,6 +392,8 @@ Alpine.data('multiplication', (config) => ({
     openedAt: 0,
     feedbackAt: 0,
     chartOpen: false,
+    speechMessage: '',
+    speechTimer: null,
     timeout: null,
     pending: null,
     pauseRequested: false,
@@ -423,7 +425,14 @@ Alpine.data('multiplication', (config) => ({
             this.feedback = result.result;
             if (result.result) this.feedbackAt = performance.now();
             this.pending = null;
-            if (result.complete) this.mode = 'complete';
+            if (config.spelling && ['help','cover','listen'].includes(action)) {
+                this.question = result.question;
+                this.mode = 'question';
+                this.timeout = setTimeout(() => this.pause('Paused after a long gap. Resume when ready.'), Math.max(0,90000-(performance.now()-this.openedAt)));
+                if (result.speech) this.speak(result.speech);
+                if (action==='cover') this.$nextTick(() => this.$refs.answer?.focus({preventScroll:true}));
+            }
+            else if (result.complete) this.mode = 'complete';
             else if (action === 'help') {
                 this.chartOpen = true;
                 this.mode = 'question';
@@ -437,7 +446,7 @@ Alpine.data('multiplication', (config) => ({
                 this.mode = 'question';
                 this.openedAt = performance.now();
                 this.timeout = setTimeout(() => this.pause('Paused after a long gap. Resume when you’re ready.'), 90000);
-                this.$nextTick(() => this.$refs.answer.focus({preventScroll:true}));
+                this.$nextTick(() => { if (!config.spelling || this.question.can_answer) this.$refs.answer?.focus({preventScroll:true}); });
             } else this.mode = result.result && result.running ? 'feedback' : 'paused';
         } catch (error) {
             this.error = error.message;
@@ -450,18 +459,45 @@ Alpine.data('multiplication', (config) => ({
             }
         }
     },
+    stopSpeech() {
+        clearTimeout(this.speechTimer);
+        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    },
+    speak(word) {
+        this.stopSpeech();
+        this.speechMessage = '';
+        if (!('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) {
+            this.speechMessage = 'Voice is unavailable. Use Look at the word, then cover it.';
+            return;
+        }
+        const utterance = new SpeechSynthesisUtterance(word);
+        utterance.lang = 'en-US';
+        utterance.rate = 0.8;
+        const voices = window.speechSynthesis.getVoices().filter(v => v.lang.startsWith('en'));
+        const voice = voices.find(v => v.localService && v.lang==='en-US') || voices.find(v => v.localService) || voices[0];
+        if (voice) utterance.voice = voice;
+        utterance.onstart = () => { clearTimeout(this.speechTimer); this.speechMessage = 'Listen carefully. You can hear it again.'; };
+        utterance.onerror = () => { clearTimeout(this.speechTimer); this.speechMessage = 'Couldn’t play the voice. Try Hear the word again or use Look at the word.'; };
+        this.speechTimer = setTimeout(() => { this.speechMessage = 'No sound? Check the volume, try Hear the word again, or use Look at the word.'; }, 4000);
+        try { window.speechSynthesis.speak(utterance); }
+        catch { this.speechMessage = 'Voice is unavailable. Use Look at the word, then cover it.'; }
+    },
+    cover() { return this.request('cover', {attempt_id:this.question.id}); },
+    listen() { return this.request('listen', {attempt_id:this.question.id}); },
+    choose(word) { this.answer=word; return this.answerQuestion(); },
     help() { return this.request('help', {attempt_id:this.question.id}); },
     closeChart() { this.chartOpen=false; this.$nextTick(() => this.$refs.answer.focus({preventScroll:true})); },
     start() { return this.request('start'); },
-    next() { return this.request('next', {attempt_id:this.feedback.attempt_id, feedback_ms:Math.max(0, Math.min(5000, Math.round(performance.now()-this.feedbackAt)))}); },
+    next() { this.stopSpeech(); this.speechMessage=''; return this.request('next', {attempt_id:this.feedback.attempt_id, feedback_ms:Math.max(0, Math.min(5000, Math.round(performance.now()-this.feedbackAt)))}); },
     answerQuestion() {
         if (this.busy || this.answer === '' || this.mode !== 'question') return;
-        this.pending = {attempt_id:this.question.id, answer:Number(this.answer), response_ms:Math.max(100,Math.round(performance.now()-this.openedAt))};
+        this.pending = {attempt_id:this.question.id, answer:config.spelling ? this.answer : Number(this.answer), response_ms:Math.max(100,Math.round(performance.now()-this.openedAt))};
         return this.request('answer', this.pending);
     },
     retry() { if (this.pending) return this.request('answer', this.pending); },
     async pause(message = '') {
         if (this.busy) { this.pauseRequested = true; return; }
+        this.stopSpeech();
         this.chartOpen = false;
         this.mode = 'paused';
         await this.request('pause');

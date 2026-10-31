@@ -8,8 +8,8 @@ use App\Models\PracticeAttempt;
 use App\Models\User;
 use App\Models\WorkSession;
 use App\Services\DailyRoutine;
-use App\Services\MultiplicationPractice;
 use App\Services\ParentActions;
+use App\Services\PracticeGame;
 use App\Services\School;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -69,7 +69,7 @@ class MultiplicationPracticeTest extends TestCase
     public function test_invalid_game_settings_are_rejected_without_creating_work(): void
     {
         [$parent] = $this->family();
-        foreach ([['minutes' => 0], ['minutes' => 16], ['fact_min' => 0], ['fact_max' => 13], ['fact_min' => 9, 'fact_max' => 3], ['requires_photo' => true]] as $patch) {
+        foreach ([['question_target' => 0], ['question_target' => 101], ['minutes' => 0], ['minutes' => 16], ['fact_min' => 0], ['fact_max' => 13], ['fact_min' => 9, 'fact_max' => 3], ['requires_photo' => true]] as $patch) {
             $file = tempnam(sys_get_temp_dir(), 'game-plan-');
             file_put_contents($file, json_encode(['date' => '2026-11-02', 'assignments' => [$patch + ['activity_type' => 'multiplication']]]));
             try {
@@ -79,6 +79,28 @@ class MultiplicationPracticeTest extends TestCase
             }
         }
         $this->assertDatabaseCount('assignments', 1);
+    }
+
+    public function test_question_target_finishes_on_the_thirtieth_answer_even_after_the_time_target(): void
+    {
+        [$parent, $student, $game] = $this->family();
+        ParentActions::update($parent, $game->id, ['question_target' => 30]);
+        $game->refresh();
+        $this->openDay($student);
+        $payload = $this->act($student, $game, 'start');
+        for ($number = 1; $number <= 30; $number++) {
+            $payload = $this->answer($student, $game, $payload['question'], 3);
+            $this->assertSame($number === 30, $payload['complete']);
+            if ($number < 30) {
+                $payload = $this->act($student, $game, 'next');
+            }
+        }
+        $this->assertSame(30, $payload['summary']['question_target']);
+        $this->assertSame(30, $payload['summary']['round']['attempts']);
+        $this->assertSame(90000, $payload['summary']['round']['practice_ms']);
+        $this->assertSame('submitted', $game->fresh()->status);
+        ParentActions::copy($parent, '2026-11-02', '2026-11-03');
+        $this->assertSame(30, Assignment::latest('id')->first()->question_target);
     }
 
     public function test_only_own_student_can_play_and_a_day_must_be_started(): void
@@ -132,14 +154,14 @@ class MultiplicationPracticeTest extends TestCase
         $first = $this->act($student, $game, 'start');
         $this->travel(10)->minutes();
         $this->assertSame(0, DailyRoutine::report($student, '2026-11-02')['totals_seconds']['work']);
-        $this->assertSame(0, MultiplicationPractice::summary($game)['round']['practice_ms']);
+        $this->assertSame(0, PracticeGame::summary($game)['round']['practice_ms']);
         $this->act($student, $game, 'pause');
         $this->assertTrue(PracticeAttempt::find($first['question']['id'])->interrupted);
         $this->travel(10)->minutes();
         $new = $this->act($student, $game, 'start');
         $this->assertNotSame($first['question']['id'], $new['question']['id']);
         $this->postJson('/practice/'.$game->id, ['action' => 'answer', 'version' => $student->fresh()->routine_version, 'attempt_id' => $first['question']['id'], 'answer' => 36, 'response_ms' => 1000])->assertNotFound();
-        $this->assertSame(0, MultiplicationPractice::summary($game)['round']['attempts']);
+        $this->assertSame(0, PracticeGame::summary($game)['round']['attempts']);
         $this->assertSame(0, DailyRoutine::report($student, '2026-11-02')['totals_seconds']['work']);
     }
 
@@ -155,7 +177,7 @@ class MultiplicationPracticeTest extends TestCase
         $newVersion = $student->fresh()->routine_version;
         $this->postJson('/practice/'.$game->id, $data)->assertOk();
         $this->assertSame($newVersion, $student->fresh()->routine_version);
-        $this->assertSame(3000, MultiplicationPractice::summary($game)['round']['practice_ms']);
+        $this->assertSame(3000, PracticeGame::summary($game)['round']['practice_ms']);
         $this->postJson('/practice/'.$game->id, array_replace($data, ['answer' => 35]))->assertConflict();
         $next = $this->act($student, $game, 'next')['question'];
         $other = ParentActions::create($parent, ['date' => '2026-11-02', 'subject' => 'Writing', 'title' => 'Paragraph', 'instructions' => 'Write.']);
@@ -175,7 +197,7 @@ class MultiplicationPracticeTest extends TestCase
         $this->postJson('/practice/'.$game->id, $data)->assertConflict();
         $this->postJson('/practice/'.$game->id, array_replace($data, ['response_ms' => 0]))->assertUnprocessable();
         $this->postJson('/practice/'.$game->id, array_replace($data, ['answer' => -1]))->assertUnprocessable();
-        $this->assertSame(0, MultiplicationPractice::summary($game)['round']['practice_ms']);
+        $this->assertSame(0, PracticeGame::summary($game)['round']['practice_ms']);
         $this->travel(90)->seconds();
         $this->postJson('/practice/'.$game->id, array_replace($data, ['response_ms' => 90000]))->assertOk();
         $this->assertSame(90000, PracticeAttempt::find($question['id'])->response_ms);
@@ -212,7 +234,7 @@ class MultiplicationPracticeTest extends TestCase
         $this->assertSame(0, $resumed['summary']['round']['practice_ms']);
         $this->answer($student, $game, $resumed['question'], 60);
         $this->assertSame(2, $game->fresh()->revision);
-        $this->assertCount(2, MultiplicationPractice::summary($game->fresh())['rounds']);
+        $this->assertCount(2, PracticeGame::summary($game->fresh())['rounds']);
         ParentActions::review($parent, $game->id, 'approved', 'Good practice.', 2);
         $this->postJson('/practice/'.$game->id, ['action' => 'start', 'version' => $student->fresh()->routine_version])->assertConflict();
         $this->assertSame('approved', $game->fresh()->status);
@@ -244,7 +266,7 @@ class MultiplicationPracticeTest extends TestCase
         $this->answer($student, $game, $question, 2);
         $question = $this->act($student, $game, 'next')['question'];
         $this->answer($student, $game, $question, 1, 0);
-        $facts = MultiplicationPractice::facts($student);
+        $facts = PracticeGame::facts($student);
         $this->assertSame(50.0, $facts['facts'][0]['accuracy']);
         $this->assertSame(2000, $facts['facts'][0]['recent_correct_median_ms']);
         $this->assertFalse($facts['facts'][0]['quick_recently']);
@@ -282,7 +304,7 @@ class MultiplicationPracticeTest extends TestCase
         foreach ([[7, 8, 2000], [8, 7, 4000]] as [$left, $right, $speed]) {
             PracticeAttempt::create(['student_id' => $student->id, 'assignment_id' => $game->id, 'work_session_id' => $session->id, 'revision' => 1, 'left' => $left, 'right' => $right, 'issued_at' => now(), 'answered_at' => now(), 'correct' => true, 'answer' => 56, 'response_ms' => $speed, 'credited_ms' => $speed]);
         }
-        $facts = MultiplicationPractice::facts($student)['facts'];
+        $facts = PracticeGame::facts($student)['facts'];
         $this->assertCount(1, $facts);
         $this->assertSame('7 × 8', $facts[0]['fact']);
         $this->assertSame(2, $facts[0]['attempts']);
@@ -328,7 +350,7 @@ class MultiplicationPracticeTest extends TestCase
         $this->assertSame(1, $result['summary']['round']['help_uses']);
         $this->assertNull($result['summary']['round']['median_correct_ms']);
         $this->assertSame(1, $result['summary']['round']['correct']);
-        $facts = MultiplicationPractice::facts($student)['facts'];
+        $facts = PracticeGame::facts($student)['facts'];
         $this->assertTrue($facts[0]['needs_drill']);
         $this->assertFalse($facts[0]['quick_recently']);
         $this->assertNull($facts[0]['recent_correct_median_ms']);
@@ -346,7 +368,7 @@ class MultiplicationPracticeTest extends TestCase
         $this->act($student, $game, 'help', ['attempt_id' => $question['id']]);
         $this->postJson('/practice/'.$game->id, ['action' => 'help', 'version' => $oldVersion, 'attempt_id' => $question['id']])->assertConflict();
         $this->act($student, $game, 'pause');
-        $facts = MultiplicationPractice::facts($student)['facts'];
+        $facts = PracticeGame::facts($student)['facts'];
         $this->assertCount(1, $facts);
         $this->assertSame(0, $facts[0]['attempts']);
         $this->assertSame(1, $facts[0]['help_uses']);
@@ -368,7 +390,7 @@ class MultiplicationPracticeTest extends TestCase
         $this->travel(1)->hours();
         DailyRoutine::correct($parent, $session->school_day_id, $session->id, ['version' => $student->fresh()->routine_version, 'started_at' => '2026-11-02T08:00:00', 'ended_at' => '2026-11-02T09:00:00', 'reason' => 'Forgot to stop the page.']);
         $this->assertSame(5, DailyRoutine::report($student, '2026-11-02')['totals_seconds']['work']);
-        $this->assertSame(5000, MultiplicationPractice::summary($game)['round']['practice_ms']);
+        $this->assertSame(5000, PracticeGame::summary($game)['round']['practice_ms']);
         $this->assertSame('in_progress', $game->fresh()->status);
     }
 }

@@ -7,14 +7,14 @@
 <x-routine-card :routine="$routine" :parent="$parent"/>
 @if($a->feedback)<section class="feedback panel mb-6"><h2>Feedback from Dad</h2><p>{{ $a->feedback }}</p></section>@endif
 @if(!$parent)
-<section class="panel practice-game" @keydown.enter.window="if(mode==='feedback' &amp;&amp; !busy &amp;&amp; !routineStale){$event.preventDefault();next()}" x-data="multiplication(@js(['url' => route('practice.act', $a), 'version' => $routine['version'], 'summary' => $summary, 'status' => $a->status, 'complete' => in_array($a->status, ['submitted', 'approved'])]))">
+<section class="panel practice-game" @keydown.enter.window="if(mode==='feedback' &amp;&amp; !busy &amp;&amp; !routineStale){$event.preventDefault();next()}" x-data="practiceGame(@js(['url' => route('practice.act', $a), 'version' => $routine['version'], 'summary' => $summary, 'status' => $a->status, 'complete' => in_array($a->status, ['submitted', 'approved'])]))">
     <div class="flex-between gap-3 flex-wrap"><span class="eyebrow">{{ $a->fact_min }}–{{ $a->fact_max }} TIMES TABLES</span><span class="small muted" x-text="summary.round.correct+' / '+summary.round.attempts+' correct'"></span></div>
     <p class="muted mt-3">{{ $a->instructions }}</p>
-    <div class="progress my-5" role="progressbar" aria-label="Practice progress" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="Math.min(100,Math.round(100*summary.round.practice_ms/summary.target_ms))"><span :style="'width:'+Math.min(100,100*summary.round.practice_ms/summary.target_ms)+'%'"></span></div>
+    <div class="progress my-5" role="progressbar" aria-label="Practice progress" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="Math.min(100,Math.round(100*(summary.question_target ? summary.round.attempts/summary.question_target : summary.round.practice_ms/summary.target_ms)))"><span :style="'width:'+Math.min(100,100*(summary.question_target ? summary.round.attempts/summary.question_target : summary.round.practice_ms/summary.target_ms))+'%'"></span></div>
     <div x-show="mode==='ready' || mode==='paused'" class="stack text-center py-6">
         <h2 x-text="mode==='ready'?'Ready for a short round?':'Practice is paused.'"></h2>
         <p class="muted">Aim for accurate answers. There’s no countdown. Slower facts will come back for more practice.</p>
-        <p class="small muted">{{ $a->minutes }} {{ Str::plural('minute', $a->minutes) }} of recorded practice. Breaks and time away don’t fill the target.</p>
+        <p class="small muted">@if($a->question_target){{ $a->question_target }} questions. Take your time; each saved answer counts toward the target.@else{{ $a->minutes }} {{ Str::plural('minute', $a->minutes) }} of recorded practice. Breaks and time away don’t fill the target.@endif</p>
         @if($routine['open_day'])<button class="btn primary mx-auto" :disabled="busy || routineStale" @click="start()" x-text="mode==='ready'?'Start practice':'Resume practice'"></button>@else<a class="btn primary mx-auto" href="{{ route('home') }}">Start my day first →</a>@endif
     </div>
     <div x-show="mode==='question' || mode==='unsaved'" x-cloak class="practice-question stack">
@@ -47,7 +47,7 @@
     <noscript><p class="error-text">This game needs JavaScript enabled.</p></noscript>
 </section>
 @else
-<div class="grid gap-6 xl:grid-cols-2 mb-6"><x-practice-summary :summary="$summary"/><section class="panel stack"><h2>Review the practice</h2><p class="muted">{{ $a->fact_min }}–{{ $a->fact_max }} times tables · {{ $a->minutes }} minute target. Review accuracy and recall alongside the fact history below.</p>
+<div class="grid gap-6 xl:grid-cols-2 mb-6"><x-practice-summary :summary="$summary"/><section class="panel stack"><h2>Review the practice</h2><p class="muted">{{ $a->fact_min }}–{{ $a->fact_max }} times tables · {{ $a->question_target ? $a->question_target.' question target' : $a->minutes.' minute target' }}. Review accuracy and recall alongside the fact history below.</p>
 @if($a->status === 'submitted')<form action="/assignments/{{ $a->id }}/review" method="post" class="stack" x-data="{decision:'approved'}">@csrf<label>Decision<select name="decision" x-model="decision"><option value="approved">Approve this practice</option><option value="needs_changes">Request another practice round</option></select></label><label>Feedback<textarea name="feedback" rows="3" maxlength="4000" :required="decision==='needs_changes'"></textarea></label><button class="btn primary">Send review</button></form>@else<p class="muted">{{ $a->status === 'approved' ? 'This practice is approved.' : 'Noah will submit this automatically when he reaches the practice target.' }}</p>@endif
 </section></div>
 @if($a->status === 'not_started' && !$a->started_at)<details class="panel mb-6"><summary>Edit practice</summary><form method="post" action="/parent/assignments/{{ $a->id }}" class="stack">@csrf<x-editor :date="$a->date->toDateString()" :a="$a"/><button class="btn primary">Save changes</button></form></details>@endif

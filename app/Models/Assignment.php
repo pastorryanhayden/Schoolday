@@ -17,7 +17,12 @@ class Assignment extends Model
 
     protected function casts(): array
     {
-        return ['fact_min' => 'integer', 'fact_max' => 'integer', 'minutes' => 'integer', 'date' => 'date', 'requires_photo' => 'boolean', 'started_at' => 'datetime', 'submitted_at' => 'datetime', 'approved_at' => 'datetime'];
+        return ['spelling_words' => 'array', 'question_target' => 'integer', 'fact_min' => 'integer', 'fact_max' => 'integer', 'minutes' => 'integer', 'date' => 'date', 'requires_photo' => 'boolean', 'started_at' => 'datetime', 'submitted_at' => 'datetime', 'approved_at' => 'datetime'];
+    }
+
+    public function isPractice(): bool
+    {
+        return in_array($this->activity_type, ['multiplication', 'spelling']);
     }
 
     public function photos()

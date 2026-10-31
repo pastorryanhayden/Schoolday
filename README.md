@@ -264,3 +264,29 @@ Example plan (choose the actual date):
 The same fields work with `recurring-add`, plus `date` and `weekdays`. Defaults fill Math, title, and instructions. Photo requirements must be false. `assignment ID` also includes the practice summary. Parent CLI commands inspect and plan practice; they do not answer questions for Noah.
 
 Tests cover defaults/ranges, recurrence/copying, server grading, active-time accounting, question expiry, pauses/device switches, answer retry safety, submission/approval boundaries, new rounds, reversed-fact history, chart assistance including unanswered help, parent reports, and CLI operations. Browser checks include planning, keyboard/keypad entry, the chart dialog, tablet layout, and recorded assistance.
+
+
+### Spelling practice
+
+Choose **Spelling practice game** in the planner. Enter the weekly list, one word per line (1–50 English words, including apostrophes or hyphens). The list is saved on that activity, so later lists do not change past results. Copy the activity or use weekday recurrence for the week, then stop that recurrence and create the next week’s list. Unstarted activities can be edited.
+
+All three modes rotate: **Look & spell** (study, cover, type), **Listen & spell** (hear, type), and **Choose the spelling** (hear, select from three spellings). Choice alternatives are generated from letter swaps/omissions; listening identifies the intended word when an alternative is also a real word. Browser text-to-speech uses an English device voice when available, preferring a local voice. Device voice quality and pronunciation vary; words with ambiguous pronunciations or homophones may need parent explanation. No OpenAI key or paid speech service is required. If audio fails, use Look at the word and cover it; the peek is recorded.
+
+A replay is counted separately and is not treated as an error. Peeks flag a word for further practice even if unanswered; assisted correct answers still count for accuracy and time, but are excluded from independent recall speed. Every listed word gets a turn before repeating, with recent mistakes/peeks prioritized on the next pass. Parents see results by mode and word; recognition results are separate from spelling from memory. Times reflect saved interaction, not verified attention. The same breaks, stale-device checks, retries, time accounting, and parent review rules apply as multiplication.
+
+Use five minutes by default (1–15), or optional `question_target` (1–100) to finish after that many saved answers instead. The question target also works for multiplication. Inputs are graded on the server, ignoring case, surrounding spaces, and curly versus straight apostrophes.
+
+```sh
+php artisan schoolday schema spelling
+php artisan schoolday plan --file=spelling-plan.json --dry-run
+php artisan schoolday plan --file=spelling-plan.json --key=spelling-week-one
+php artisan schoolday practice ASSIGNMENT_ID --compact
+```
+
+Example plan:
+
+```json
+{"date":"2026-11-02","assignments":[{"activity_type":"spelling","minutes":5,"spelling_words":["because","friend","different"]}]}
+```
+
+`practice ID` and `assignment ID` include per-word and per-mode spelling results. `facts` continues to report multiplication only. Weekly lists also work with `recurring-add`.

@@ -10,8 +10,8 @@ use App\Models\Recurrence;
 use App\Models\User;
 use App\Services\CliOperations;
 use App\Services\DailyRoutine;
-use App\Services\MultiplicationPractice;
 use App\Services\ParentActions;
+use App\Services\PracticeGame;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Storage;
@@ -207,7 +207,7 @@ class SchooldayCommand extends Command
         }
         Validator::make(['plan' => $data], [
             'plan' => 'required|array:date,assignments', 'plan.date' => 'required|date_format:Y-m-d',
-            'plan.assignments' => 'required|array|min:1|max:100', 'plan.assignments.*' => 'required|array:activity_type,fact_min,fact_max,book_id,subject,title,instructions,reference,minutes,requires_photo,position',
+            'plan.assignments' => 'required|array|min:1|max:100', 'plan.assignments.*' => 'required|array:activity_type,fact_min,fact_max,question_target,spelling_words,book_id,subject,title,instructions,reference,minutes,requires_photo,position',
         ])->validate();
         abort_unless(array_is_list($data['assignments']), 422, 'assignments must be a JSON list.');
         foreach ($data['assignments'] as $index => $assignment) {
@@ -294,8 +294,8 @@ class SchooldayCommand extends Command
             'messages' => $this->messages($parent, $student),
             'activity' => $this->activity($student),
             'timeline' => DailyRoutine::report($student, $this->date($this->option('date'))),
-            'practice' => MultiplicationPractice::summary(ParentActions::assignment($parent, $this->integer($this->argument('target')))),
-            'facts' => MultiplicationPractice::facts($student),
+            'practice' => PracticeGame::report(ParentActions::assignment($parent, $this->integer($this->argument('target')))),
+            'facts' => PracticeGame::facts($student),
             'books' => ['books' => Book::where('student_id', $student->id)->orderByDesc('active')->orderBy('subject')->orderBy('id')->get()->toArray()],
             'recurring' => ['recurrences' => Recurrence::where('student_id', $student->id)->orderBy('id')->get()->toArray()],
         };
@@ -335,7 +335,7 @@ class SchooldayCommand extends Command
 
     private function detail(Assignment $assignment): array
     {
-        return ['assignment' => $this->assignmentData($assignment), 'practice' => $assignment->activity_type === 'multiplication' ? MultiplicationPractice::summary($assignment) : null, 'photos' => $assignment->photos()->orderBy('revision')->orderBy('id')->get()->map(fn ($photo): array => [
+        return ['assignment' => $this->assignmentData($assignment), 'practice' => $assignment->isPractice() ? PracticeGame::report($assignment) : null, 'photos' => $assignment->photos()->orderBy('revision')->orderBy('id')->get()->map(fn ($photo): array => [
             'id' => $photo->id, 'name' => $photo->name, 'revision' => $photo->revision,
             'local_path' => Storage::disk('local')->path($photo->path), 'exists' => Storage::disk('local')->exists($photo->path),
         ])->all(), 'activity' => Activity::where('assignment_id', $assignment->id)->orderBy('id')->get()->toArray()];
@@ -343,12 +343,12 @@ class SchooldayCommand extends Command
 
     private function assignmentSummary(Assignment $assignment): array
     {
-        return array_intersect_key($this->assignmentData($assignment), array_flip(['id', 'activity_type', 'fact_min', 'fact_max', 'book_id', 'date', 'subject', 'title', 'status', 'position', 'minutes', 'requires_photo', 'revision', 'started_at', 'submitted_at', 'elapsed_seconds_including_breaks']));
+        return array_intersect_key($this->assignmentData($assignment), array_flip(['id', 'activity_type', 'fact_min', 'fact_max', 'question_target', 'spelling_words', 'book_id', 'date', 'subject', 'title', 'status', 'position', 'minutes', 'requires_photo', 'revision', 'started_at', 'submitted_at', 'elapsed_seconds_including_breaks']));
     }
 
     private function assignmentData(Assignment $assignment): array
     {
-        return $assignment->only(['id', 'student_id', 'recurrence_id', 'activity_type', 'fact_min', 'fact_max', 'book_id', 'subject', 'title', 'instructions', 'reference', 'minutes', 'requires_photo', 'position', 'status', 'note', 'feedback', 'revision']) + [
+        return $assignment->only(['id', 'student_id', 'recurrence_id', 'activity_type', 'fact_min', 'fact_max', 'question_target', 'spelling_words', 'book_id', 'subject', 'title', 'instructions', 'reference', 'minutes', 'requires_photo', 'position', 'status', 'note', 'feedback', 'revision']) + [
             'date' => $assignment->date->toDateString(), 'started_at' => $assignment->started_at?->toIso8601String(), 'submitted_at' => $assignment->submitted_at?->toIso8601String(), 'approved_at' => $assignment->approved_at?->toIso8601String(),
             'elapsed_seconds_including_breaks' => $assignment->started_at === null ? null : max(0, (int) $assignment->started_at->diffInSeconds(now())),
         ];
@@ -403,7 +403,7 @@ class SchooldayCommand extends Command
             'messages [--unread] [--after=0] [--limit=50]' => 'Read conversation without changing unread state. Use --after cursor to page forward.',
             'message --file=- [--assignment=ID]' => 'Send a parent message from stdin. --body is available for short text.',
             'read --through=ID' => 'Explicitly mark incoming messages through a visible message ID read.',
-            'practice ID' => 'Results for a multiplication assignment; facts shows lifetime accuracy and recall by fact.',
+            'practice ID' => 'Results for a practice assignment; facts shows lifetime accuracy and recall by fact.',
             'facts' => 'Multiplication accuracy and recent correct response speed by fact. Read-only.',
             'timeline [--date=today]' => 'Reported day, periods, work/break totals, correction history, and version. Read-only.',
             'timeline-correct --file=correction.json' => 'Correct a period, or add a gap period when session_id is omitted. Requires inspected version and a reason.',
@@ -415,7 +415,7 @@ class SchooldayCommand extends Command
             'recurring' => 'List active and stopped recurrence rules.',
             'recurring-add --file=rule.json' => 'Create a weekday recurrence and generate its first date if due.',
             'recurring-stop ID' => 'Stop future generation; preserve existing assignments.',
-            'schema [plan|update|recurring-add|book|multiplication|timeline-correct|day-correct]' => 'Show accepted JSON fields and a working example.',
+            'schema [plan|update|recurring-add|book|multiplication|spelling|timeline-correct|day-correct]' => 'Show accepted JSON fields and a working example.',
         ], 'contract' => [
             'output' => 'JSON by default; --compact emits one line. schema_version is 1. All success and handled error results are JSON.',
             'actor' => '--as=parent-email or ID; auto-selected only when exactly one parent exists. CLI host/SSH access is trusted administrative access, not a student-facing API.',
@@ -432,14 +432,15 @@ class SchooldayCommand extends Command
         $example = ['subject' => 'Math', 'title' => 'Lesson 43 · Fractions', 'instructions' => 'Complete the lesson and write your score in a note.', 'reference' => 'Teaching Textbooks · Lesson 43', 'minutes' => 40, 'requires_photo' => false];
 
         return match ($name) {
-            'plan' => ['schema' => 'plan', 'required' => ['date', 'assignments'], 'assignment_required' => ['subject', 'title', 'instructions'], 'optional' => ['activity_type (assignment or multiplication)', 'fact_min', 'fact_max', 'reference', 'minutes', 'requires_photo (default false)', 'position (default append in listed order)'], 'book_defaults' => 'Include book_id to fill omitted subject, title, instructions, reference, minutes, and requires_photo from the book.', 'unknown_fields' => 'rejected', 'example' => ['date' => today()->addDay()->toDateString(), 'assignments' => [$example]]],
+            'plan' => ['schema' => 'plan', 'required' => ['date', 'assignments'], 'assignment_required' => ['subject', 'title', 'instructions'], 'optional' => ['activity_type (assignment, multiplication, or spelling)', 'fact_min', 'fact_max', 'spelling_words', 'question_target', 'reference', 'minutes', 'requires_photo (default false)', 'position (default append in listed order)'], 'book_defaults' => 'Include book_id to fill omitted subject, title, instructions, reference, minutes, and requires_photo from the book.', 'unknown_fields' => 'rejected', 'example' => ['date' => today()->addDay()->toDateString(), 'assignments' => [$example]]],
             'update' => ['schema' => 'update', 'allowed_fields' => ParentActions::ASSIGNMENT_FIELDS, 'unknown_fields' => 'rejected', 'example' => ['instructions' => 'Complete practice problems 1–12.', 'requires_photo' => true]],
             'timeline-correct' => ['schema' => 'timeline-correct', 'example' => ['day_id' => 1, 'session_id' => 2, 'version' => 3, 'started_at' => '2026-11-02T08:05:00-06:00', 'ended_at' => '2026-11-02T08:30:00-06:00', 'reason' => 'Forgot to stop before a break.'], 'new_period' => 'Omit session_id; supply kind work|break|idle and assignment_id for work. No overlaps or future times.'],
             'day-correct' => ['schema' => 'day-correct', 'example' => ['day_id' => 1, 'version' => 3, 'started_at' => '2026-11-02T08:05:00-06:00', 'finished_at' => '2026-11-02T12:00:00-06:00', 'reason' => 'Forgot to finish the day.']],
-            'multiplication' => ['schema' => 'multiplication', 'plan_example' => ['date' => today()->toDateString(), 'assignments' => [['activity_type' => 'multiplication', 'minutes' => 5, 'fact_min' => 1, 'fact_max' => 12]]], 'notes' => 'Use plan or recurring-add with activity_type=multiplication. Minutes 1–15; factors 1–12. Photo requirements must be false. Completed practice is submitted for parent review.'],
+            'spelling' => ['schema' => 'spelling', 'plan_example' => ['date' => today()->toDateString(), 'assignments' => [['activity_type' => 'spelling', 'minutes' => 5, 'spelling_words' => ['because', 'friend', 'different']]]], 'notes' => 'Rotates study, listen, and choose modes. Enter 1–50 unique English words (letters, apostrophes, hyphens). Minutes 1–15 or optional question_target 1–100. Practice ID includes per-word and per-mode results. Copy and recurrence retain the list; update future unstarted work for a new week.'],
+            'multiplication' => ['schema' => 'multiplication', 'plan_example' => ['date' => today()->toDateString(), 'assignments' => [['activity_type' => 'multiplication', 'minutes' => 5, 'fact_min' => 1, 'fact_max' => 12]]], 'notes' => 'Use plan or recurring-add with activity_type=multiplication. Minutes 1–15; factors 1–12. Optional question_target 1–100 finishes after that many answers instead of the time target. Photo requirements must be false. Completed practice is submitted for parent review.'],
             'book' => ['schema' => 'book', 'required' => ['subject', 'title'], 'optional' => ['publisher', 'level', 'reference', 'instructions', 'minutes', 'requires_photo', 'active'], 'example' => ['subject' => 'Math', 'title' => 'Math workbook', 'publisher' => 'Teaching Textbooks', 'level' => null, 'reference' => 'Lesson 43', 'instructions' => 'Complete the lesson and record your score.', 'minutes' => 40, 'requires_photo' => false, 'active' => true]],
-            'recurring-add' => ['schema' => 'recurring-add', 'required' => ['date', 'subject', 'title', 'instructions', 'weekdays'], 'weekdays' => 'ISO numbers: Monday 1 through Sunday 7; no duplicates.', 'optional' => ['reference', 'minutes', 'requires_photo', 'position', 'ends_on'], 'example' => $example + ['date' => today()->addDay()->toDateString(), 'weekdays' => [1, 2, 3, 4, 5], 'ends_on' => null]],
-            default => abort(422, 'Unknown schema. Choose plan, update, recurring-add, book, multiplication, timeline-correct, or day-correct.'),
+            'recurring-add' => ['schema' => 'recurring-add', 'required' => ['date', 'subject', 'title', 'instructions', 'weekdays'], 'weekdays' => 'ISO numbers: Monday 1 through Sunday 7; no duplicates.', 'optional' => ['activity_type', 'spelling_words', 'fact_min', 'fact_max', 'question_target', 'reference', 'minutes', 'requires_photo', 'position', 'ends_on'], 'example' => $example + ['date' => today()->addDay()->toDateString(), 'weekdays' => [1, 2, 3, 4, 5], 'ends_on' => null]],
+            default => abort(422, 'Unknown schema. Choose plan, update, recurring-add, book, multiplication, spelling, timeline-correct, or day-correct.'),
         };
     }
 

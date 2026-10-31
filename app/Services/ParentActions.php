@@ -13,7 +13,7 @@ use Illuminate\Validation\Rule;
 
 class ParentActions
 {
-    public const ASSIGNMENT_FIELDS = ['activity_type', 'fact_min', 'fact_max', 'book_id', 'date', 'subject', 'title', 'instructions', 'reference', 'minutes', 'requires_photo', 'position'];
+    public const ASSIGNMENT_FIELDS = ['activity_type', 'fact_min', 'fact_max', 'question_target', 'spelling_words', 'book_id', 'date', 'subject', 'title', 'instructions', 'reference', 'minutes', 'requires_photo', 'position'];
 
     public static function authorize(User $parent): void
     {
@@ -34,10 +34,19 @@ class ParentActions
 
     public static function validateAssignment(array $data): array
     {
+        if (is_string($data['spelling_words'] ?? null)) {
+            $data['spelling_words'] = preg_split('/\R/', $data['spelling_words'], -1, PREG_SPLIT_NO_EMPTY);
+        }
+        if (is_array($data['spelling_words'] ?? null)) {
+            $data['spelling_words'] = array_values(array_unique(array_map(fn ($word) => is_string($word) ? mb_strtolower(trim(str_replace('’', "'", $word))) : $word, $data['spelling_words']), SORT_REGULAR));
+        }
         $data += ['activity_type' => 'assignment', 'fact_min' => 1, 'fact_max' => 12];
         $rules = [
             'assignment' => 'required|array:'.implode(',', self::ASSIGNMENT_FIELDS),
-            'assignment.activity_type' => 'required|in:assignment,multiplication',
+            'assignment.activity_type' => 'required|in:assignment,multiplication,spelling',
+            'assignment.spelling_words' => 'nullable|array|list|max:50',
+            'assignment.spelling_words.*' => ['required', 'string', 'max:40', "regex:/^[a-z]+(?:['-][a-z]+)*$/"],
+            'assignment.question_target' => 'nullable|integer|min:1|max:100',
             'assignment.fact_min' => 'required|integer|min:1|max:12',
             'assignment.fact_max' => 'required|integer|min:1|max:12|gte:assignment.fact_min',
             'assignment.book_id' => ['nullable', 'integer', Rule::exists('books', 'id')->where('student_id', self::student()->id)],
@@ -50,9 +59,13 @@ class ParentActions
             'assignment.requires_photo' => 'required|boolean',
             'assignment.position' => 'required|integer|min:0|max:999',
         ];
-        if ($data['activity_type'] === 'multiplication') {
+        if (in_array($data['activity_type'], ['multiplication', 'spelling'])) {
             $rules['assignment.minutes'] = 'required|integer|min:1|max:15';
             $rules['assignment.requires_photo'] = 'required|boolean|declined';
+        }
+
+        if ($data['activity_type'] === 'spelling') {
+            $rules['assignment.spelling_words'] = 'required|array|list|min:1|max:50';
         }
 
         return Validator::make(['assignment' => $data], $rules)->validate()['assignment'];
@@ -191,6 +204,9 @@ class ParentActions
 
     public static function assignmentDefaults(array $data): array
     {
+        if (($data['activity_type'] ?? '') === 'spelling') {
+            $data += ['subject' => 'Spelling', 'title' => 'Spelling practice', 'instructions' => 'Look, listen, and choose. Practice this week’s words.', 'minutes' => 5, 'requires_photo' => false];
+        }
         if (($data['activity_type'] ?? '') === 'multiplication') {
             $data += ['subject' => 'Math', 'title' => 'Multiplication practice', 'instructions' => 'Practice accurate recall, one fact at a time.', 'minutes' => 5, 'requires_photo' => false, 'fact_min' => 1, 'fact_max' => 12];
         }
