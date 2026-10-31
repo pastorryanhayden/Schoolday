@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Activity;
 use App\Models\Assignment;
+use App\Models\Book;
 use App\Models\Message;
 use App\Models\Recurrence;
 use App\Models\User;
@@ -22,7 +23,7 @@ use Throwable;
 class SchooldayCommand extends Command
 {
     protected $signature = 'schoolday
-        {action=help : help, schema, status, assignments, assignment, plan, update, reorder, copy, review, messages, message, read, activity, recurring, recurring-add, recurring-stop}
+        {action=help : help, schema, status, assignments, assignment, plan, update, reorder, copy, review, messages, message, read, activity, recurring, recurring-add, recurring-stop, books, book-add, book-update}
         {target? : Assignment/rule ID, or schema name}
         {--as= : Parent email or numeric ID; required if there are multiple parents}
         {--date= : YYYY-MM-DD, today, tomorrow, or yesterday (default today)}
@@ -55,9 +56,10 @@ class SchooldayCommand extends Command
         'messages' => ['after', 'limit', 'unread'], 'message' => ['body', 'file', 'assignment'],
         'read' => ['through'], 'activity' => ['after', 'limit'],
         'recurring' => [], 'recurring-add' => ['file'], 'recurring-stop' => [],
+        'books' => [], 'book-add' => ['file'], 'book-update' => ['file'],
     ];
 
-    private const MUTATIONS = ['plan', 'update', 'reorder', 'copy', 'review', 'message', 'read', 'recurring-add', 'recurring-stop'];
+    private const MUTATIONS = ['plan', 'update', 'reorder', 'copy', 'review', 'message', 'read', 'recurring-add', 'recurring-stop', 'book-add', 'book-update'];
 
     public function handle(): int
     {
@@ -111,7 +113,7 @@ class SchooldayCommand extends Command
             $supplied = $option === 'limit' ? $this->input->hasParameterOption('--limit') : ($value !== null && $value !== false);
             abort_if($supplied && ! in_array($option, $allowed, true), 422, '--'.$option.' is not supported for '.$action.'.');
         }
-        abort_if($this->argument('target') !== null && ! in_array($action, ['schema', 'assignment', 'update', 'review', 'recurring-stop'], true), 422, 'This action does not accept a positional target.');
+        abort_if($this->argument('target') !== null && ! in_array($action, ['schema', 'assignment', 'update', 'review', 'recurring-stop', 'book-update'], true), 422, 'This action does not accept a positional target.');
     }
 
     private function parentAccount(): User
@@ -178,7 +180,8 @@ class SchooldayCommand extends Command
             'read' => ['through' => $this->integer($this->option('through'), 'through')],
             'copy' => ['from' => $this->date($this->option('date')), 'to' => $this->date($this->requiredOption('to'))],
             'reorder' => ['date' => $this->date($this->option('date')), 'ids' => array_map(fn (string $id): int => $this->integer($id), explode(',', $this->requiredOption('ids')))],
-            'recurring-add' => $this->jsonInput(),
+            'recurring-add', 'book-add' => $this->jsonInput(),
+            'book-update' => ['id' => $this->integer($this->argument('target')), 'patch' => $this->jsonInput()],
             'recurring-stop' => ['id' => $this->integer($this->argument('target'))],
         };
     }
@@ -201,12 +204,12 @@ class SchooldayCommand extends Command
         }
         Validator::make(['plan' => $data], [
             'plan' => 'required|array:date,assignments', 'plan.date' => 'required|date_format:Y-m-d',
-            'plan.assignments' => 'required|array|min:1|max:100', 'plan.assignments.*' => 'required|array:subject,title,instructions,reference,minutes,requires_photo,position',
+            'plan.assignments' => 'required|array|min:1|max:100', 'plan.assignments.*' => 'required|array:book_id,subject,title,instructions,reference,minutes,requires_photo,position',
         ])->validate();
         abort_unless(array_is_list($data['assignments']), 422, 'assignments must be a JSON list.');
         foreach ($data['assignments'] as $index => $assignment) {
             // Resolve defaults at execution time, not in the retry fingerprint.
-            ParentActions::validateAssignment($assignment + ['date' => $data['date'], 'requires_photo' => false, 'position' => $index]);
+            ParentActions::validateAssignment(ParentActions::assignmentDefaults($assignment + ['date' => $data['date'], 'position' => $index]) + ['requires_photo' => false]);
         }
 
         return $data;
@@ -239,6 +242,8 @@ class SchooldayCommand extends Command
             'read' => $this->markRead($parent, $payload['through']),
             'recurring-add' => ['recurrence' => ParentActions::recurrence($parent, $payload)->toArray()],
             'recurring-stop' => ['recurrence' => ParentActions::stopRecurrence($parent, $payload['id'])->toArray()],
+            'book-add' => ['book' => ParentActions::saveBook($parent, $payload)->toArray()],
+            'book-update' => ['book' => ParentActions::saveBook($parent, $payload['patch'], $payload['id'])->toArray()],
         };
     }
 
@@ -270,6 +275,7 @@ class SchooldayCommand extends Command
             'assignment' => $this->detail(ParentActions::assignment($parent, $this->integer($this->argument('target')))),
             'messages' => $this->messages($parent, $student),
             'activity' => $this->activity($student),
+            'books' => ['books' => Book::where('student_id', $student->id)->orderByDesc('active')->orderBy('subject')->orderBy('id')->get()->toArray()],
             'recurring' => ['recurrences' => Recurrence::where('student_id', $student->id)->orderBy('id')->get()->toArray()],
         };
     }
@@ -314,12 +320,12 @@ class SchooldayCommand extends Command
 
     private function assignmentSummary(Assignment $assignment): array
     {
-        return array_intersect_key($this->assignmentData($assignment), array_flip(['id', 'date', 'subject', 'title', 'status', 'position', 'minutes', 'requires_photo', 'revision', 'started_at', 'submitted_at', 'elapsed_seconds_including_breaks']));
+        return array_intersect_key($this->assignmentData($assignment), array_flip(['id', 'book_id', 'date', 'subject', 'title', 'status', 'position', 'minutes', 'requires_photo', 'revision', 'started_at', 'submitted_at', 'elapsed_seconds_including_breaks']));
     }
 
     private function assignmentData(Assignment $assignment): array
     {
-        return $assignment->only(['id', 'student_id', 'recurrence_id', 'subject', 'title', 'instructions', 'reference', 'minutes', 'requires_photo', 'position', 'status', 'note', 'feedback', 'revision']) + [
+        return $assignment->only(['id', 'student_id', 'recurrence_id', 'book_id', 'subject', 'title', 'instructions', 'reference', 'minutes', 'requires_photo', 'position', 'status', 'note', 'feedback', 'revision']) + [
             'date' => $assignment->date->toDateString(), 'started_at' => $assignment->started_at?->toIso8601String(), 'submitted_at' => $assignment->submitted_at?->toIso8601String(), 'approved_at' => $assignment->approved_at?->toIso8601String(),
             'elapsed_seconds_including_breaks' => $assignment->started_at === null ? null : max(0, (int) $assignment->started_at->diffInSeconds(now())),
         ];
@@ -375,10 +381,13 @@ class SchooldayCommand extends Command
             'message --file=- [--assignment=ID]' => 'Send a parent message from stdin. --body is available for short text.',
             'read --through=ID' => 'Explicitly mark incoming messages through a visible message ID read.',
             'activity [--after=0] [--limit=50]' => 'Recorded app actions; separate from tablet contact.',
+            'books' => 'List the book catalog and assignment defaults, including archived books.',
+            'book-add --file=book.json' => 'Add a book/course with subject, publisher, level, and assignment defaults.',
+            'book-update ID --file=patch.json' => 'Edit book metadata/defaults; set active=false to archive without changing existing assignments.',
             'recurring' => 'List active and stopped recurrence rules.',
             'recurring-add --file=rule.json' => 'Create a weekday recurrence and generate its first date if due.',
             'recurring-stop ID' => 'Stop future generation; preserve existing assignments.',
-            'schema [plan|update|recurring-add]' => 'Show accepted JSON fields and a working example.',
+            'schema [plan|update|recurring-add|book]' => 'Show accepted JSON fields and a working example.',
         ], 'contract' => [
             'output' => 'JSON by default; --compact emits one line. schema_version is 1. All success and handled error results are JSON.',
             'actor' => '--as=parent-email or ID; auto-selected only when exactly one parent exists. CLI host/SSH access is trusted administrative access, not a student-facing API.',
@@ -395,10 +404,11 @@ class SchooldayCommand extends Command
         $example = ['subject' => 'Math', 'title' => 'Lesson 43 · Fractions', 'instructions' => 'Complete the lesson and write your score in a note.', 'reference' => 'Teaching Textbooks · Lesson 43', 'minutes' => 40, 'requires_photo' => false];
 
         return match ($name) {
-            'plan' => ['schema' => 'plan', 'required' => ['date', 'assignments'], 'assignment_required' => ['subject', 'title', 'instructions'], 'optional' => ['reference', 'minutes', 'requires_photo (default false)', 'position (default append in listed order)'], 'unknown_fields' => 'rejected', 'example' => ['date' => today()->addDay()->toDateString(), 'assignments' => [$example]]],
+            'plan' => ['schema' => 'plan', 'required' => ['date', 'assignments'], 'assignment_required' => ['subject', 'title', 'instructions'], 'optional' => ['reference', 'minutes', 'requires_photo (default false)', 'position (default append in listed order)'], 'book_defaults' => 'Include book_id to fill omitted subject, title, instructions, reference, minutes, and requires_photo from the book.', 'unknown_fields' => 'rejected', 'example' => ['date' => today()->addDay()->toDateString(), 'assignments' => [$example]]],
             'update' => ['schema' => 'update', 'allowed_fields' => ParentActions::ASSIGNMENT_FIELDS, 'unknown_fields' => 'rejected', 'example' => ['instructions' => 'Complete practice problems 1–12.', 'requires_photo' => true]],
+            'book' => ['schema' => 'book', 'required' => ['subject', 'title'], 'optional' => ['publisher', 'level', 'reference', 'instructions', 'minutes', 'requires_photo', 'active'], 'example' => ['subject' => 'Math', 'title' => 'Math workbook', 'publisher' => 'Teaching Textbooks', 'level' => null, 'reference' => 'Lesson 43', 'instructions' => 'Complete the lesson and record your score.', 'minutes' => 40, 'requires_photo' => false, 'active' => true]],
             'recurring-add' => ['schema' => 'recurring-add', 'required' => ['date', 'subject', 'title', 'instructions', 'weekdays'], 'weekdays' => 'ISO numbers: Monday 1 through Sunday 7; no duplicates.', 'optional' => ['reference', 'minutes', 'requires_photo', 'position', 'ends_on'], 'example' => $example + ['date' => today()->addDay()->toDateString(), 'weekdays' => [1, 2, 3, 4, 5], 'ends_on' => null]],
-            default => abort(422, 'Unknown schema. Choose plan, update, or recurring-add.'),
+            default => abort(422, 'Unknown schema. Choose plan, update, recurring-add, or book.'),
         };
     }
 

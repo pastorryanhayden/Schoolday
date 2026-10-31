@@ -1749,3 +1749,5 @@ input[type="checkbox"] {
         padding-bottom: 50px;
     }
 }
+
+.tabs .settings-tab{display:inline-flex;align-items:center;font-size:12px;color:#6c7a71;min-height:46px;padding-bottom:2px}.tabs .settings-tab:hover{color:#2e5545}

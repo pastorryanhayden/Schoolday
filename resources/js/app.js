@@ -346,4 +346,16 @@ Alpine.data("work", (id, user, serverNote, photos, revision, editable) => ({
         }
     },
 }));
+Alpine.data('bookPicker', (books) => ({
+  apply(id) {
+    const book = books.find((item) => String(item.id) === String(id));
+    if (!book) return;
+    for (const field of ['title', 'subject', 'reference', 'instructions', 'minutes']) {
+      const input = this.$root.querySelector(`[name="${field}"]`);
+      if (input) input.value = book[field] ?? (field === 'instructions' ? 'Complete the assigned lesson or pages.' : '');
+    }
+    const evidence = this.$root.querySelector('input[type="checkbox"][name="requires_photo"]');
+    if (evidence) evidence.checked = book.requires_photo;
+  }
+}));
 Alpine.start();

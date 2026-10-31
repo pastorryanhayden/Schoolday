@@ -3,15 +3,17 @@
 namespace App\Services;
 
 use App\Models\Assignment;
+use App\Models\Book;
 use App\Models\Message;
 use App\Models\Recurrence;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 
 class ParentActions
 {
-    public const ASSIGNMENT_FIELDS = ['date', 'subject', 'title', 'instructions', 'reference', 'minutes', 'requires_photo', 'position'];
+    public const ASSIGNMENT_FIELDS = ['book_id', 'date', 'subject', 'title', 'instructions', 'reference', 'minutes', 'requires_photo', 'position'];
 
     public static function authorize(User $parent): void
     {
@@ -34,6 +36,7 @@ class ParentActions
     {
         return Validator::make(['assignment' => $data], [
             'assignment' => 'required|array:'.implode(',', self::ASSIGNMENT_FIELDS),
+            'assignment.book_id' => ['nullable', 'integer', Rule::exists('books', 'id')->where('student_id', self::student()->id)],
             'assignment.date' => 'required|date_format:Y-m-d',
             'assignment.subject' => 'required|string|max:60',
             'assignment.title' => 'required|string|max:160',
@@ -49,6 +52,7 @@ class ParentActions
     {
         self::authorize($parent);
         $student = self::student();
+        $data = self::assignmentDefaults($data);
         $data += ['requires_photo' => false, 'position' => 0];
         $data = self::validateAssignment($data);
 
@@ -153,7 +157,7 @@ class ParentActions
             'rule.weekdays.*' => 'required|integer|between:1,7|distinct',
             'rule.ends_on' => 'nullable|date_format:Y-m-d|after_or_equal:rule.date',
         ])->validate();
-        $assignmentData = self::validateAssignment(array_intersect_key($data, array_flip(self::ASSIGNMENT_FIELDS)) + ['requires_photo' => false, 'position' => 0]);
+        $assignmentData = self::validateAssignment(self::assignmentDefaults(array_intersect_key($data, array_flip(self::ASSIGNMENT_FIELDS))) + ['requires_photo' => false, 'position' => 0]);
         unset($assignmentData['date']);
 
         return DB::transaction(function () use ($parent, $data, $assignmentData): Recurrence {
@@ -173,5 +177,44 @@ class ParentActions
         School::record($parent, 'recurrence_stopped', 'Stopped recurring assignment: '.$rule->assignment_data['title']);
 
         return $rule;
+    }
+
+    public static function assignmentDefaults(array $data): array
+    {
+        if (! empty($data['book_id'])) {
+            Validator::make($data, ['book_id' => 'required|integer|exists:books,id'])->validate();
+            $book = Book::where('student_id', self::student()->id)->findOrFail($data['book_id']);
+            $data += $book->only(['subject', 'title', 'reference', 'minutes', 'requires_photo']);
+            $data += ['instructions' => $book->instructions ?: 'Complete the assigned lesson or pages.'];
+        }
+
+        return $data;
+    }
+
+    public static function saveBook(User $parent, array $patch, ?int $id = null): Book
+    {
+        self::authorize($parent);
+        $student = self::student();
+        $book = $id === null ? null : Book::where('student_id', $student->id)->findOrFail($id);
+        $fields = ['subject', 'title', 'publisher', 'level', 'reference', 'instructions', 'minutes', 'requires_photo', 'active'];
+        $data = $book === null ? $patch + ['requires_photo' => false, 'active' => true] : array_replace($book->only($fields), $patch);
+        $data = Validator::make(['book' => $data], [
+            'book' => 'required|array:'.implode(',', $fields),
+            'book.subject' => 'required|string|max:60', 'book.title' => 'required|string|max:160',
+            'book.publisher' => 'nullable|string|max:160', 'book.level' => 'nullable|string|max:100',
+            'book.reference' => 'nullable|string|max:160', 'book.instructions' => 'nullable|string|max:8000',
+            'book.minutes' => 'nullable|integer|min:1|max:480', 'book.requires_photo' => 'required|boolean', 'book.active' => 'required|boolean',
+        ])->validate()['book'];
+
+        return DB::transaction(function () use ($parent, $student, $book, $data): Book {
+            if ($book === null) {
+                $book = Book::create($data + ['student_id' => $student->id]);
+            } else {
+                $book->update($data);
+            }
+            School::record($parent, 'book_updated', 'Saved book: '.$book->title);
+
+            return $book->fresh();
+        });
     }
 }

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Activity;
 use App\Models\Assignment;
+use App\Models\Book;
 use App\Models\Message;
 use App\Models\Photo;
 use App\Models\Recurrence;
@@ -64,7 +65,7 @@ class SchoolController extends Controller
         $date = $r->input('date', today()->toDateString());
         School::generate($date);
         $student = $r->user()->role === 'student' ? $r->user() : User::where('role', 'student')->firstOrFail();
-        $assignments = Assignment::where('student_id', $student->id)->whereDate('date', $date)->with('photos')->orderBy('position')->orderBy('id')->get();
+        $assignments = Assignment::where('student_id', $student->id)->whereDate('date', $date)->with(['photos', 'book'])->orderBy('position')->orderBy('id')->get();
         $unread = Message::where('student_id', $student->id)->where('sender_id', '!=', $r->user()->id)->whereNull('read_at')->count();
         $messages = Message::where('student_id', $student->id)->with(['sender', 'assignment'])->latest('id')->limit(100)->get()->reverse()->values();
         $activities = Activity::where(fn ($q) => $q->where('user_id', $student->id)->orWhereHas('assignment', fn ($a) => $a->where('student_id', $student->id)))->latest()->limit(20)->get();
@@ -73,15 +74,18 @@ class SchoolController extends Controller
         $pending = Assignment::where('student_id', $student->id)->where('status', 'submitted')->orderBy('submitted_at')->get();
         $rules = Recurrence::where('student_id', $student->id)->where('active', true)->get();
 
-        return view('dashboard', compact('date', 'student', 'assignments', 'unread', 'messages', 'activities', 'unfinished', 'current', 'pending', 'rules'));
+        $books = Book::where('student_id', $student->id)->where('active', true)->orderBy('subject')->orderBy('title')->get();
+
+        return view('dashboard', compact('date', 'student', 'assignments', 'unread', 'messages', 'activities', 'unfinished', 'current', 'pending', 'rules', 'books'));
     }
 
     public function assignment(Request $r, Assignment $assignment)
     {
         $this->access($r, $assignment);
-        $assignment->load('photos');
+        $assignment->load(['photos', 'book']);
+        $books = $r->user()->role === 'parent' ? Book::where('student_id', $assignment->student_id)->where(fn ($query) => $query->where('active', true)->orWhere('id', $assignment->book_id))->orderBy('subject')->orderBy('title')->get() : collect();
 
-        return view('assignment', ['a' => $assignment]);
+        return view('assignment', ['a' => $assignment, 'books' => $books]);
     }
 
     public function start(Request $r, Assignment $assignment)
@@ -192,7 +196,7 @@ class SchoolController extends Controller
 
     private function assignmentData(Request $r): array
     {
-        return $r->validate(['date' => 'required|date_format:Y-m-d', 'subject' => 'required|string|max:60', 'title' => 'required|string|max:160', 'instructions' => 'required|string|max:8000', 'reference' => 'nullable|string|max:160', 'minutes' => 'nullable|integer|min:1|max:480', 'requires_photo' => 'required|boolean', 'position' => 'required|integer|min:0|max:999']);
+        return $r->validate(['book_id' => 'nullable|integer|exists:books,id', 'date' => 'required|date_format:Y-m-d', 'subject' => 'required|string|max:60', 'title' => 'required|string|max:160', 'instructions' => 'required|string|max:8000', 'reference' => 'nullable|string|max:160', 'minutes' => 'nullable|integer|min:1|max:480', 'requires_photo' => 'required|boolean', 'position' => 'required|integer|min:0|max:999']);
     }
 
     public function save(Request $r, ?Assignment $assignment = null)

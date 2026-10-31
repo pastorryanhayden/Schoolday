@@ -57,7 +57,7 @@ Artisan::command('schoolday:password {email} {--password-file= : Private passwor
 
         return 1;
     }
-    $user->update(['password' => $password, 'remember_token' => null]);
+    $user->forceFill(['password' => $password, 'remember_token' => null])->save();
     DB::table('sessions')->where('user_id', $user->id)->delete();
     $this->info('Password changed; previous sessions revoked.');
 });

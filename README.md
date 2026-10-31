@@ -178,4 +178,32 @@ Validation includes the original web feature suite plus the parent CLI feature s
 
 ## Known limitations
 
-One family and one student; latest-100-message conversation; latest-20-action dashboard log; no push delivery while closed, offline synchronization, bulk assignment import, account settings UI, assignment deletion, calendar holiday exceptions, template editing UI, or automatic image compression. Assignment text/date can be edited only before the student starts it; order can be changed anytime. Recurrence is generated per viewed/requested date, not pre-generated for an entire semester. SQLite and local files assume one durable application host. No hosted deployment or actual device lockdown has been performed.
+One family and one student; latest-100-message conversation; latest-20-action dashboard log; no push delivery while closed, offline synchronization, bulk assignment import, account settings UI, assignment deletion, calendar holiday exceptions, template editing UI, or automatic image compression. Assignment text/date can be edited only before the student starts it; order can be changed anytime. Recurrence is generated per viewed/requested date, not pre-generated for an entire semester. SQLite and local files assume one durable application host. Physical device installation and lockdown still need verification.
+
+## Books settings
+
+Open **Settings · Books** in the parent interface to add or edit a book/course. Store its subject, title, publisher, level/edition, default lesson reference, instructions, estimated minutes, and photo requirement. Choose it in the assignment editor, then adjust the lesson before saving. Defaults are copied; later edits do not rewrite existing assignments. Archive a book by unchecking Active; its existing assignments and recurrence links remain. Lesson references do not advance automatically.
+
+The same catalog is available to Codex:
+
+```sh
+php artisan schoolday books --compact
+php artisan schoolday schema book
+php artisan schoolday book-add --file=book.json --dry-run
+php artisan schoolday book-add --file=book.json --key=math-book
+php artisan schoolday book-update 1 --file=book-patch.json --key=math-book-update
+```
+
+A plan item may contain `book_id` and omit default assignment fields. Explicit fields override the book defaults. Web settings and catalog mutations require a parent account.
+
+## Production host
+
+Schoolday is hosted at https://schoolday.haydenindustries.com on Forge server `church-websites-2` (1003587), isolated site user `schoolday`, site 3475035. Source: `pastorryanhayden/Schoolday`, branch `codex/initial-deploy`. The deployment script runs `deploy.sh`; it preserves the SQLite database and private storage. Do not run the demo seeder on this host.
+
+Run live parent operations through SSH:
+
+```sh
+ssh schoolday@134.209.129.215 'cd /home/schoolday/schoolday.haydenindustries.com && php8.4 artisan schoolday status --compact'
+```
+
+Credentials are provisioned separately from Git. Back up the database using SQLite backup plus private storage and the environment/application key; an offsite backup destination has not yet been configured.

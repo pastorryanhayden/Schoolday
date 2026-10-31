@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\BookController;
 use App\Http\Controllers\SchoolController as School;
 use Illuminate\Support\Facades\Route;
 
@@ -18,6 +19,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/assignments/{assignment}/review', [School::class, 'review']);
     Route::get('/photos/{photo}', [School::class, 'photo'])->name('photo');
     Route::delete('/photos/{photo}', [School::class, 'removePhoto']);
+    Route::get('/parent/settings', [BookController::class, 'index'])->name('settings');
+    Route::post('/parent/books', [BookController::class, 'save'])->name('books.store');
+    Route::post('/parent/books/{book}', [BookController::class, 'save'])->name('books.update');
     Route::post('/parent/assignments', [School::class, 'save']);
     Route::post('/parent/assignments/{assignment}', [School::class, 'save']);
     Route::post('/parent/copy', [School::class, 'copy']);
