@@ -35,7 +35,7 @@
         <button class="btn primary mx-auto" :disabled="busy || routineStale" @click="next()">Next fact →</button>
     </div>
     <div x-show="mode==='complete'" class="stack text-center py-6" role="status">
-        <h2>Practice complete. Nice work!</h2><p class="muted">Your results are saved for Dad’s review.</p><p><strong x-text="summary.round.correct+' of '+summary.round.attempts+' correct'"></strong></p><a class="btn primary mx-auto" href="{{ route('home') }}">Choose my next activity →</a>
+        <h2>Practice complete. Nice work!</h2><p class="muted" x-text="approved?'Dad approved this practice.':'Your results are saved for Dad’s review.'">Your results are saved for Dad’s review.</p><p><strong x-text="summary.round.correct+' of '+summary.round.attempts+' correct'"></strong></p><a class="btn primary mx-auto" href="{{ route('home') }}">Choose my next activity →</a>
     </div>
     <p class="error-text mt-4" x-show="error" x-text="error" role="alert"></p>
     <button class="text-btn mt-5" x-show="mode==='question' || mode==='feedback' || mode==='unsaved'" :disabled="busy || routineStale" @click="pause()">Pause practice</button>

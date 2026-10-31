@@ -382,6 +382,7 @@ Alpine.data('bookPicker', (books, initialType = 'assignment') => ({
 Alpine.data('multiplication', (config) => ({
     version: config.version,
     summary: config.summary,
+    approved: config.status === 'approved',
     mode: config.complete ? 'complete' : 'ready',
     question: null,
     feedback: null,
