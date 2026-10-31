@@ -1,0 +1,177 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\Assignment;
+use App\Models\Message;
+use App\Models\Recurrence;
+use App\Models\User;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
+
+class ParentActions
+{
+    public const ASSIGNMENT_FIELDS = ['date', 'subject', 'title', 'instructions', 'reference', 'minutes', 'requires_photo', 'position'];
+
+    public static function authorize(User $parent): void
+    {
+        abort_unless($parent->role === 'parent', 403, 'A parent account is required.');
+    }
+
+    public static function student(): User
+    {
+        return User::where('role', 'student')->firstOrFail();
+    }
+
+    public static function assignment(User $parent, int $id): Assignment
+    {
+        self::authorize($parent);
+
+        return Assignment::where('student_id', self::student()->id)->findOrFail($id);
+    }
+
+    public static function validateAssignment(array $data): array
+    {
+        return Validator::make(['assignment' => $data], [
+            'assignment' => 'required|array:'.implode(',', self::ASSIGNMENT_FIELDS),
+            'assignment.date' => 'required|date_format:Y-m-d',
+            'assignment.subject' => 'required|string|max:60',
+            'assignment.title' => 'required|string|max:160',
+            'assignment.instructions' => 'required|string|max:8000',
+            'assignment.reference' => 'nullable|string|max:160',
+            'assignment.minutes' => 'nullable|integer|min:1|max:480',
+            'assignment.requires_photo' => 'required|boolean',
+            'assignment.position' => 'required|integer|min:0|max:999',
+        ])->validate()['assignment'];
+    }
+
+    public static function create(User $parent, array $data): Assignment
+    {
+        self::authorize($parent);
+        $student = self::student();
+        $data += ['requires_photo' => false, 'position' => 0];
+        $data = self::validateAssignment($data);
+
+        return DB::transaction(function () use ($parent, $student, $data): Assignment {
+            $assignment = Assignment::create($data + ['student_id' => $student->id]);
+            School::record($parent, 'assignment_created', 'Created: '.$assignment->title, $assignment);
+
+            return $assignment->fresh();
+        });
+    }
+
+    public static function update(User $parent, int $id, array $patch): Assignment
+    {
+        $assignment = self::assignment($parent, $id);
+        abort_if($patch === [], 422, 'Supply at least one assignment field to update.');
+
+        return DB::transaction(function () use ($parent, $assignment, $patch): Assignment {
+            $assignment = Assignment::lockForUpdate()->findOrFail($assignment->id);
+            abort_unless($assignment->status === 'not_started' && ! $assignment->started_at, 409, 'Only unstarted work can be edited.');
+            $data = $assignment->only(self::ASSIGNMENT_FIELDS);
+            $data['date'] = $assignment->date->toDateString();
+            $data = self::validateAssignment(array_replace($data, $patch));
+            $assignment->update($data);
+            School::record($parent, 'assignment_updated', 'Updated: '.$assignment->title, $assignment);
+
+            return $assignment->fresh();
+        });
+    }
+
+    public static function review(User $parent, int $id, string $decision, ?string $feedback, ?int $revision = null): Assignment
+    {
+        $assignment = self::assignment($parent, $id);
+        $data = Validator::make(['decision' => $decision, 'feedback' => $feedback === null ? null : trim($feedback)], [
+            'decision' => 'required|in:approved,needs_changes',
+            'feedback' => 'nullable|required_if:decision,needs_changes|string|max:4000',
+        ])->validate();
+
+        return DB::transaction(function () use ($parent, $assignment, $data, $revision): Assignment {
+            $assignment = Assignment::lockForUpdate()->findOrFail($assignment->id);
+            abort_unless($assignment->status === 'submitted', 409, 'Only submitted work can be reviewed.');
+            abort_if($revision !== null && $assignment->revision !== $revision, 409, 'The submission revision has changed. Inspect the current work before reviewing.');
+            $assignment->update(['status' => $data['decision'], 'feedback' => $data['feedback'], 'approved_at' => $data['decision'] === 'approved' ? now() : null]);
+            School::record($parent, 'review', ($data['decision'] === 'approved' ? 'Approved: ' : 'Changes requested: ').$assignment->title.' — '.($data['feedback'] ?? ''), $assignment);
+            Message::create(['sender_id' => $parent->id, 'student_id' => $assignment->student_id, 'assignment_id' => $assignment->id, 'body' => ($data['decision'] === 'approved' ? 'Approved! ' : 'Please make corrections. ').($data['feedback'] ?? 'Nice work.')]);
+
+            return $assignment->fresh();
+        });
+    }
+
+    public static function message(User $parent, string $body, ?int $assignmentId = null): Message
+    {
+        self::authorize($parent);
+        $student = self::student();
+        $assignment = $assignmentId === null ? null : self::assignment($parent, $assignmentId);
+        $data = Validator::make(['body' => trim($body)], ['body' => 'required|string|max:4000'])->validate();
+
+        return DB::transaction(function () use ($parent, $student, $assignment, $data): Message {
+            $message = Message::create($data + ['sender_id' => $parent->id, 'student_id' => $student->id, 'assignment_id' => $assignment?->id]);
+            School::record($parent, 'message', 'Sent a message', $assignment);
+
+            return $message->fresh();
+        });
+    }
+
+    public static function copy(User $parent, string $from, string $to): array
+    {
+        self::authorize($parent);
+        Validator::make(compact('from', 'to'), ['from' => 'required|date_format:Y-m-d', 'to' => 'required|date_format:Y-m-d|different:from'])->validate();
+        $student = self::student();
+
+        return DB::transaction(function () use ($parent, $student, $from, $to): array {
+            return Assignment::where('student_id', $student->id)->whereDate('date', $from)->orderBy('position')->orderBy('id')->get()->map(function (Assignment $assignment) use ($parent, $to): Assignment {
+                return self::create($parent, array_replace($assignment->only(self::ASSIGNMENT_FIELDS), ['date' => $to]));
+            })->all();
+        });
+    }
+
+    public static function reorder(User $parent, string $date, array $ids): array
+    {
+        self::authorize($parent);
+        Validator::make(compact('date', 'ids'), ['date' => 'required|date_format:Y-m-d', 'ids' => 'required|array|min:1', 'ids.*' => 'required|integer|distinct'])->validate();
+
+        return DB::transaction(function () use ($parent, $date, $ids): array {
+            $assignments = Assignment::where('student_id', self::student()->id)->whereDate('date', $date)->lockForUpdate()->get();
+            abort_unless($assignments->count() === count($ids) && $assignments->pluck('id')->diff($ids)->isEmpty(), 422, 'Supply every assignment ID for the date exactly once.');
+            foreach ($ids as $position => $id) {
+                Assignment::whereKey($id)->update(['position' => $position]);
+            }
+            School::record($parent, 'plan_reordered', 'Reordered assignments for '.$date);
+
+            return $ids;
+        });
+    }
+
+    public static function recurrence(User $parent, array $data): Recurrence
+    {
+        self::authorize($parent);
+        Validator::make(['rule' => $data], [
+            'rule' => 'required|array:'.implode(',', self::ASSIGNMENT_FIELDS).',weekdays,ends_on',
+            'rule.date' => 'required|date_format:Y-m-d',
+            'rule.weekdays' => 'required|array|min:1|max:7',
+            'rule.weekdays.*' => 'required|integer|between:1,7|distinct',
+            'rule.ends_on' => 'nullable|date_format:Y-m-d|after_or_equal:rule.date',
+        ])->validate();
+        $assignmentData = self::validateAssignment(array_intersect_key($data, array_flip(self::ASSIGNMENT_FIELDS)) + ['requires_photo' => false, 'position' => 0]);
+        unset($assignmentData['date']);
+
+        return DB::transaction(function () use ($parent, $data, $assignmentData): Recurrence {
+            $rule = Recurrence::create(['student_id' => self::student()->id, 'starts_on' => $data['date'], 'ends_on' => $data['ends_on'] ?? null, 'weekdays' => $data['weekdays'], 'assignment_data' => $assignmentData]);
+            School::generate($data['date']);
+            School::record($parent, 'recurrence_created', 'Created recurring assignment: '.$assignmentData['title']);
+
+            return $rule;
+        });
+    }
+
+    public static function stopRecurrence(User $parent, int $id): Recurrence
+    {
+        self::authorize($parent);
+        $rule = Recurrence::where('student_id', self::student()->id)->findOrFail($id);
+        $rule->update(['active' => false]);
+        School::record($parent, 'recurrence_stopped', 'Stopped recurring assignment: '.$rule->assignment_data['title']);
+
+        return $rule;
+    }
+}

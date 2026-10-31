@@ -1,0 +1,1 @@
+@props(['status'])<span class="status status-{{ $status }}"><span></span>{{ ['not_started'=>'Not started','in_progress'=>'In progress','submitted'=>'Awaiting review','needs_changes'=>'Needs changes','approved'=>'Approved'][$status] }}</span>
