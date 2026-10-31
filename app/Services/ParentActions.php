@@ -13,7 +13,7 @@ use Illuminate\Validation\Rule;
 
 class ParentActions
 {
-    public const ASSIGNMENT_FIELDS = ['book_id', 'date', 'subject', 'title', 'instructions', 'reference', 'minutes', 'requires_photo', 'position'];
+    public const ASSIGNMENT_FIELDS = ['activity_type', 'fact_min', 'fact_max', 'book_id', 'date', 'subject', 'title', 'instructions', 'reference', 'minutes', 'requires_photo', 'position'];
 
     public static function authorize(User $parent): void
     {
@@ -34,8 +34,12 @@ class ParentActions
 
     public static function validateAssignment(array $data): array
     {
-        return Validator::make(['assignment' => $data], [
+        $data += ['activity_type' => 'assignment', 'fact_min' => 1, 'fact_max' => 12];
+        $rules = [
             'assignment' => 'required|array:'.implode(',', self::ASSIGNMENT_FIELDS),
+            'assignment.activity_type' => 'required|in:assignment,multiplication',
+            'assignment.fact_min' => 'required|integer|min:1|max:12',
+            'assignment.fact_max' => 'required|integer|min:1|max:12|gte:assignment.fact_min',
             'assignment.book_id' => ['nullable', 'integer', Rule::exists('books', 'id')->where('student_id', self::student()->id)],
             'assignment.date' => 'required|date_format:Y-m-d',
             'assignment.subject' => 'required|string|max:60',
@@ -45,7 +49,13 @@ class ParentActions
             'assignment.minutes' => 'nullable|integer|min:1|max:480',
             'assignment.requires_photo' => 'required|boolean',
             'assignment.position' => 'required|integer|min:0|max:999',
-        ])->validate()['assignment'];
+        ];
+        if ($data['activity_type'] === 'multiplication') {
+            $rules['assignment.minutes'] = 'required|integer|min:1|max:15';
+            $rules['assignment.requires_photo'] = 'required|boolean|declined';
+        }
+
+        return Validator::make(['assignment' => $data], $rules)->validate()['assignment'];
     }
 
     public static function create(User $parent, array $data): Assignment
@@ -181,6 +191,9 @@ class ParentActions
 
     public static function assignmentDefaults(array $data): array
     {
+        if (($data['activity_type'] ?? '') === 'multiplication') {
+            $data += ['subject' => 'Math', 'title' => 'Multiplication practice', 'instructions' => 'Practice accurate recall, one fact at a time.', 'minutes' => 5, 'requires_photo' => false, 'fact_min' => 1, 'fact_max' => 12];
+        }
         if (! empty($data['book_id'])) {
             Validator::make($data, ['book_id' => 'required|integer|exists:books,id'])->validate();
             $book = Book::where('student_id', self::student()->id)->findOrFail($data['book_id']);

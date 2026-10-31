@@ -42,7 +42,7 @@ class DailyRoutine
 
     private static function session(SchoolDay $day, string $kind, ?Assignment $assignment = null): void
     {
-        $day->sessions()->create(['kind' => $kind, 'assignment_id' => $assignment?->id, 'label' => $assignment ? $assignment->subject.' · '.$assignment->title : ($kind === 'break' ? 'Break' : 'Choosing the next activity'), 'started_at' => now()]);
+        $day->sessions()->create(['kind' => $kind, 'assignment_id' => $assignment?->id, 'label' => $assignment ? $assignment->subject.' · '.$assignment->title : ($kind === 'break' ? 'Break' : 'Choosing the next activity'), 'started_at' => now(), 'practice_ms' => $assignment?->activity_type === 'multiplication' ? 0 : null]);
     }
 
     public static function transition(User $actor, string $action, int $version, ?int $assignmentId = null): void

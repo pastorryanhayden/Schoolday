@@ -2,6 +2,6 @@
 <form action="{{ route('routine.transition') }}" method="post">
     @csrf
     <input type="hidden" name="action" value="{{ $action }}">
-    <input type="hidden" name="version" value="{{ $version }}">
+    <input type="hidden" name="version" value="{{ $version }}" :value="routineVersion">
     <button {{ $attributes->class(['btn', 'primary' => $primary, 'secondary' => !$primary]) }} :disabled="routineStale">{{ $label }}</button>
 </form>

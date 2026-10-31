@@ -62,6 +62,7 @@ async function photoStore(method, value) {
 }
 Alpine.data("shell", (authenticated, latest, routine) => ({
     routineStale: false,
+    routineVersion: routine?.version ?? 0,
     routineLabel: routine?.label ?? "Schoolday is not running",
     online: navigator.onLine,
     changed: false,
@@ -85,6 +86,14 @@ Alpine.data("shell", (authenticated, latest, routine) => ({
     tabletStatus: "Checking…",
     lastContact: "Checking device contact…",
     async init() {
+        window.addEventListener('routine-sync', (event) => {
+            if (!routine || event.detail.version >= routine.version) {
+                routine = event.detail;
+                this.routineStale = false;
+                this.routineVersion = routine.version;
+                this.routineLabel = routine.label;
+            }
+        });
         window.addEventListener("online", () => {
             this.online = true;
         });
@@ -100,8 +109,8 @@ Alpine.data("shell", (authenticated, latest, routine) => ({
                     this.unread = data.unread;
                     this.readThrough = data.read_through;
                     this.nowMs = Date.now();
-                    if (routine && data.routine.version !== routine.version) this.routineStale = true;
-                    this.routineLabel = data.routine.label;
+                    if (routine && data.routine.version > routine.version) this.routineStale = true;
+                    if (!routine || data.routine.version >= routine.version) this.routineLabel = data.routine.label;
                     this.lastSeen = data.last_seen;
                     this.onBreak = data.on_break;
                     const elapsed = data.last_seen
@@ -348,7 +357,17 @@ Alpine.data("work", (id, user, serverNote, photos, revision, editable) => ({
         }
     },
 }));
-Alpine.data('bookPicker', (books) => ({
+Alpine.data('bookPicker', (books, initialType = 'assignment') => ({
+  activityType: initialType,
+  chooseType() {
+    if (this.activityType !== 'multiplication') return;
+    const defaults = {book_id:'',subject:'Math',title:'Multiplication practice',instructions:'Practice accurate recall, one fact at a time.',reference:'',minutes:5};
+    for (const [field,value] of Object.entries(defaults)) {
+      const input = this.$root.querySelector(`[name="${field}"]`);
+      if (input) input.value = value;
+    }
+    this.$root.querySelector('input[type="checkbox"][name="requires_photo"]').checked = false;
+  },
   apply(id) {
     const book = books.find((item) => String(item.id) === String(id));
     if (!book) return;
@@ -360,4 +379,93 @@ Alpine.data('bookPicker', (books) => ({
     if (evidence) evidence.checked = book.requires_photo;
   }
 }));
+Alpine.data('multiplication', (config) => ({
+    version: config.version,
+    summary: config.summary,
+    mode: config.complete ? 'complete' : 'ready',
+    question: null,
+    feedback: null,
+    answer: '',
+    busy: false,
+    error: '',
+    openedAt: 0,
+    feedbackAt: 0,
+    chartOpen: false,
+    timeout: null,
+    pending: null,
+    pauseRequested: false,
+    init() {
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) this.interrupted();
+        });
+        window.addEventListener('blur', () => this.interrupted());
+    },
+    append(digit) {
+        this.answer = (this.answer + digit).slice(0, 3);
+    },
+    interrupted() {
+        if (!['question', 'feedback'].includes(this.mode)) return;
+        clearTimeout(this.timeout);
+        if (this.busy) this.pauseRequested = true;
+        else this.pause('Paused while you were away. Resume for a fresh question.');
+    },
+    async request(action, extra = {}) {
+        if (this.busy) return;
+        this.busy = true;
+        this.error = '';
+        clearTimeout(this.timeout);
+        try {
+            const result = await api(config.url, {action, version: this.version, ...extra});
+            this.version = result.state.version;
+            this.$dispatch('routine-sync', result.state);
+            this.summary = result.summary;
+            this.feedback = result.result;
+            if (result.result) this.feedbackAt = performance.now();
+            this.pending = null;
+            if (result.complete) this.mode = 'complete';
+            else if (action === 'help') {
+                this.chartOpen = true;
+                this.mode = 'question';
+                this.timeout = setTimeout(() => this.pause('Paused after a long gap. Resume when ready.'), Math.max(0,90000-(performance.now()-this.openedAt)));
+                this.$nextTick(() => this.$refs.chartClose.focus({preventScroll:true}));
+            }
+            else if (result.question) {
+                this.chartOpen = false;
+                this.question = result.question;
+                this.answer = '';
+                this.mode = 'question';
+                this.openedAt = performance.now();
+                this.timeout = setTimeout(() => this.pause('Paused after a long gap. Resume when you’re ready.'), 90000);
+                this.$nextTick(() => this.$refs.answer.focus({preventScroll:true}));
+            } else this.mode = result.result && result.running ? 'feedback' : 'paused';
+        } catch (error) {
+            this.error = error.message;
+            this.mode = action === 'answer' ? 'unsaved' : 'paused';
+        } finally {
+            this.busy = false;
+            if (this.pauseRequested || (document.hidden && ['question','feedback'].includes(this.mode))) {
+                this.pauseRequested = false;
+                if (['question','feedback'].includes(this.mode)) await this.pause('Paused while you were away.');
+            }
+        }
+    },
+    help() { return this.request('help', {attempt_id:this.question.id}); },
+    closeChart() { this.chartOpen=false; this.$nextTick(() => this.$refs.answer.focus({preventScroll:true})); },
+    start() { return this.request('start'); },
+    next() { return this.request('next', {attempt_id:this.feedback.attempt_id, feedback_ms:Math.max(0, Math.min(5000, Math.round(performance.now()-this.feedbackAt)))}); },
+    answerQuestion() {
+        if (this.busy || this.answer === '' || this.mode !== 'question') return;
+        this.pending = {attempt_id:this.question.id, answer:Number(this.answer), response_ms:Math.max(100,Math.round(performance.now()-this.openedAt))};
+        return this.request('answer', this.pending);
+    },
+    retry() { if (this.pending) return this.request('answer', this.pending); },
+    async pause(message = '') {
+        if (this.busy) { this.pauseRequested = true; return; }
+        this.chartOpen = false;
+        this.mode = 'paused';
+        await this.request('pause');
+        if (message && !this.error) this.error = message;
+    },
+}));
+
 Alpine.start();

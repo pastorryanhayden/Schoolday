@@ -232,3 +232,35 @@ php8.4 artisan schoolday day-correct --file=day-correction.json --key=correct-da
 Read `timeline` first and use its `version` in corrections. `timeline-correct` takes `day_id`, optional `session_id`, `version`, `started_at`, `ended_at`, and `reason`; omit `session_id` and supply `kind` plus an assignment for a new work period. `day-correct` takes `day_id`, `version`, `started_at`, nullable `finished_at`, and `reason`. These support transactional dry runs and retry receipts. Parent CLI commands do not impersonate Noah’s day/activity buttons.
 
 Validation includes exact session durations, flexible order, break/resume, submission isolation, stale devices, role/ownership boundaries, day reopening/overnight behavior, auditable corrections, invalid/overlapping intervals, and CLI dry runs/retries. Browser checks cover the student controls, two-page stale state, parent correction saving, end-of-day reminders, and a 600 × 960 layout. Practice games and photo chat are subsequent features.
+
+## Multiplication practice
+
+In **Planner → Activity type**, choose **Multiplication practice game**. It defaults to five minutes and factors 1–12; set a 1–15 minute target and a smaller factor range if needed. Set the preferred order or weekday repeats like other assignments. Noah starts his day, opens the activity, and chooses Start practice. The laptop keyboard/Enter and a large on-screen number pad both work. The game shows one fact at a time, quiet progress, and feedback without a countdown or speed score. Reversed pairs share a fact history.
+
+The circled **i** button opens a 12 × 12 multiplication chart. Opening it records the first help time on that question before displaying the chart. Assisted correct answers still count toward accuracy and practice, but are excluded from independent recall speed. Chart use remains in the report even if the question is never answered. The parent fact history shows chart-use counts and More practice flags. The generator weights recent misses, chart-assisted facts, and slow independent recall more heavily; it avoids the previous two facts when alternatives exist. A fact with chart help or an error among its last five attempts keeps its drill priority.
+
+Only saved answers and brief feedback add recorded practice time. Browser response time is checked against server elapsed time; an answer contributes at most 60 seconds, and feedback at most 5 seconds. Unanswered questions, pauses, and merely leaving the page open do not fill the target. A 90-second question gap or leaving the window pauses the client; the server refuses questions older than two minutes. The current question is discarded on a fresh Start/Resume or interruption. These measurements describe recorded interaction, not verified attention. Answers and their time are retry-safe. Browser connection failures offer an answer-save retry using the original response time.
+
+Games use the same shared activity, breaks, and device-version protection as other work. Their timeline totals use recorded practice milliseconds instead of open-period duration. Editing timeline boundaries cannot fill a game target. When the target is reached, practice is submitted for parent review; it is never automatically approved. Requesting another round preserves the earlier results and starts a new full target.
+
+Parents see accuracy, recorded practice time, chart use, and median independent correct response time on the practice page, plus lifetime results by fact. Recent speed uses up to ten independent correct responses per fact. Three seconds is the initial quick-recall practice target, not a grade or mastery claim.
+
+Codex can schedule and inspect practice through the existing host CLI:
+
+```sh
+php8.4 artisan schoolday schema multiplication
+php8.4 artisan schoolday plan --file=practice-plan.json --dry-run
+php8.4 artisan schoolday plan --file=practice-plan.json --key=math-facts-monday
+php8.4 artisan schoolday practice ASSIGNMENT_ID --compact
+php8.4 artisan schoolday facts --compact
+```
+
+Example plan (choose the actual date):
+
+```json
+{"date":"2026-11-02","assignments":[{"activity_type":"multiplication","minutes":5,"fact_min":1,"fact_max":12}]}
+```
+
+The same fields work with `recurring-add`, plus `date` and `weekdays`. Defaults fill Math, title, and instructions. Photo requirements must be false. `assignment ID` also includes the practice summary. Parent CLI commands inspect and plan practice; they do not answer questions for Noah.
+
+Tests cover defaults/ranges, recurrence/copying, server grading, active-time accounting, question expiry, pauses/device switches, answer retry safety, submission/approval boundaries, new rounds, reversed-fact history, chart assistance including unanswered help, parent reports, and CLI operations. Browser checks include planning, keyboard/keypad entry, the chart dialog, tablet layout, and recorded assistance.

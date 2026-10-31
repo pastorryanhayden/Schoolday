@@ -35,5 +35,5 @@
             </div>
         @endunless
     </div>
-    <p class="footnote">Reported time only. Breaks and choosing time are separate from work. If you forget to stop, the period stays open until you or Dad correct it.</p>
+    <p class="footnote">Reported time only. Breaks and choosing time are separate from work. Ordinary work periods stay open until stopped or corrected. Games count recorded practice.</p>
 </section>

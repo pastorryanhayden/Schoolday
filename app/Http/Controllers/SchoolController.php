@@ -86,6 +86,9 @@ class SchoolController extends Controller
     public function assignment(Request $r, Assignment $assignment)
     {
         $this->access($r, $assignment);
+        if ($assignment->activity_type === 'multiplication') {
+            return redirect()->route('practice.show', $assignment);
+        }
         $assignment->load(['photos', 'book']);
         $books = $r->user()->role === 'parent' ? Book::where('student_id', $assignment->student_id)->where(fn ($query) => $query->where('active', true)->orWhere('id', $assignment->book_id))->orderBy('subject')->orderBy('title')->get() : collect();
 
@@ -99,7 +102,7 @@ class SchoolController extends Controller
         $data = $r->validate(['version' => 'required|integer|min:0']);
         DailyRoutine::transition($r->user(), 'activity-start', (int) $data['version'], $assignment->id);
 
-        return back();
+        return $assignment->activity_type === 'multiplication' ? redirect()->route('practice.show', $assignment) : back();
     }
 
     public function draft(Request $r, Assignment $assignment)
@@ -168,6 +171,7 @@ class SchoolController extends Controller
     public function submit(Request $r, Assignment $assignment)
     {
         $this->student($r, $assignment);
+        abort_if($assignment->activity_type === 'multiplication', 409, 'Complete the practice target in the game to submit it for review.');
         $data = $r->validate(['note' => 'nullable|string|max:4000']);
         DB::transaction(function () use ($r, $assignment, $data) {
             $student = DailyRoutine::lock($r->user());
@@ -196,7 +200,7 @@ class SchoolController extends Controller
 
     private function assignmentData(Request $r): array
     {
-        return $r->validate(['book_id' => 'nullable|integer|exists:books,id', 'date' => 'required|date_format:Y-m-d', 'subject' => 'required|string|max:60', 'title' => 'required|string|max:160', 'instructions' => 'required|string|max:8000', 'reference' => 'nullable|string|max:160', 'minutes' => 'nullable|integer|min:1|max:480', 'requires_photo' => 'required|boolean', 'position' => 'required|integer|min:0|max:999']);
+        return $r->validate(['activity_type' => 'nullable|in:assignment,multiplication', 'fact_min' => 'nullable|integer|min:1|max:12', 'fact_max' => 'nullable|integer|min:1|max:12', 'book_id' => 'nullable|integer|exists:books,id', 'date' => 'required|date_format:Y-m-d', 'subject' => 'required|string|max:60', 'title' => 'required|string|max:160', 'instructions' => 'required|string|max:8000', 'reference' => 'nullable|string|max:160', 'minutes' => 'nullable|integer|min:1|max:480', 'requires_photo' => 'required|boolean', 'position' => 'required|integer|min:0|max:999']);
     }
 
     public function save(Request $r, ?Assignment $assignment = null)

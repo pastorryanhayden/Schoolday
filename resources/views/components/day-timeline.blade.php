@@ -7,7 +7,7 @@
 @endphp
 <section class="panel mb-6">
     <div class="section-heading"><h2>The schoolday timeline</h2><span class="small muted">{{ $routine['date'] }} · {{ config('app.timezone') }}</span></div>
-    <p class="muted">Reported sessions, across both devices. Open periods count until explicitly stopped; refresh to update totals.</p>
+    <p class="muted">Reported sessions, across both devices. Ordinary work periods count until stopped; games count recorded practice. Refresh to update totals.</p>
     <div class="grid gap-3 sm:grid-cols-3 my-5">
         @foreach(['work' => 'Reported work', 'break' => 'Breaks', 'idle' => 'Choosing / between activities'] as $kind => $label)
             <div class="rounded-xl bg-stone-50 p-4"><strong>{{ round($routine['totals_seconds'][$kind] / 60, 1) }} min</strong><div class="small muted">{{ $label }}</div></div>
@@ -20,6 +20,7 @@
                 <article class="rounded-xl border border-stone-200 p-4">
                     <div class="flex-between gap-3 flex-wrap"><strong>{{ $period['label'] }}</strong><span class="status {{ $period['ended_at'] ? 'status-approved' : 'status-in_progress' }}">{{ $period['ended_at'] ? 'Recorded' : 'Open period' }}</span></div>
                     <p class="small muted">{{ $time($period['started_at']) }} → {{ $period['ended_at'] ? $time($period['ended_at']) : 'until stopped' }}</p>
+                    @if($period['kind'] === 'work' && $period['practice_ms'] !== null)<p class="small muted">Recorded game practice: {{ round($period['practice_ms'] / 60000, 1) }} min. Open-page time is excluded.</p>@endif
                     @if($period['assignment_id'])<a class="text-btn" href="{{ route('assignment', $period['assignment_id']) }}">Open assignment →</a>@endif
                     @if($parent)
                         <details class="mt-3"><summary class="text-btn">Correct this period</summary>

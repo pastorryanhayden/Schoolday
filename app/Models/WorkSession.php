@@ -11,7 +11,7 @@ class WorkSession extends Model
 
     protected function casts(): array
     {
-        return ['started_at' => 'datetime', 'ended_at' => 'datetime'];
+        return ['started_at' => 'datetime', 'ended_at' => 'datetime', 'practice_ms' => 'integer'];
     }
 
     public function day(): BelongsTo
@@ -21,6 +21,10 @@ class WorkSession extends Model
 
     public function seconds(): int
     {
+        if ($this->kind === 'work' && $this->practice_ms !== null) {
+            return (int) floor($this->practice_ms / 1000);
+        }
+
         return max(0, (int) $this->started_at->diffInSeconds($this->ended_at ?? now()));
     }
 }
