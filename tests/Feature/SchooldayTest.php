@@ -87,7 +87,8 @@ class SchooldayTest extends TestCase
     {
         $a = $this->work();
         $url = '/assignments/'.$a->id;
-        $this->actingAs($this->noah)->post($url.'/start')->assertRedirect();
+        $this->actingAs($this->noah)->post('/routine', ['action' => 'day-start', 'version' => 0])->assertRedirect();
+        $this->post($url.'/start', ['version' => $this->noah->fresh()->routine_version])->assertRedirect();
         $this->assertEquals('in_progress', $a->fresh()->status);
         $this->post($url.'/submit', ['note' => 'Done'])->assertSessionHasErrors('photo');
         $this->postJson($url.'/photos', ['photo' => UploadedFile::fake()->image('page.jpg')])->assertOk();
@@ -173,11 +174,12 @@ class SchooldayTest extends TestCase
         $this->assertEquals(0, $b->fresh()->position);
         $this->post('/parent/copy', ['from' => today()->toDateString(), 'to' => today()->addDay()->toDateString()])->assertRedirect();
         $this->assertDatabaseCount('assignments', 4);
-        $this->actingAs($this->noah)->post('/assignments/'.$a->id.'/start');
+        $this->actingAs($this->noah)->post('/routine', ['action' => 'day-start', 'version' => 0])->assertRedirect();
+        $this->post('/assignments/'.$a->id.'/start', ['version' => $this->noah->fresh()->routine_version])->assertRedirect();
         $this->actingAs($this->dad)->post('/parent/assignments/'.$a->id, $data)->assertStatus(409);
-        $this->actingAs($this->noah)->post('/break', ['on_break' => 1])->assertRedirect();
+        $this->actingAs($this->noah)->post('/break', ['on_break' => 1, 'version' => $this->noah->fresh()->routine_version])->assertRedirect();
         $this->assertTrue($this->noah->fresh()->on_break);
-        $this->post('/break', ['on_break' => 0]);
+        $this->post('/break', ['on_break' => 0, 'version' => $this->noah->fresh()->routine_version]);
         $this->assertDatabaseHas('activities', ['kind' => 'break']);
         $this->assertDatabaseHas('activities', ['kind' => 'resume']);
     }
@@ -197,9 +199,10 @@ class SchooldayTest extends TestCase
     {
         $first = $this->work(['requires_photo' => false]);
         $correction = $this->work(['status' => 'needs_changes', 'requires_photo' => false, 'revision' => 1, 'feedback' => 'Please correct.']);
-        $this->actingAs($this->noah)->post('/assignments/'.$first->id.'/start')->assertRedirect();
+        $this->actingAs($this->noah)->post('/routine', ['action' => 'day-start', 'version' => 0])->assertRedirect();
+        $this->post('/assignments/'.$first->id.'/start', ['version' => $this->noah->fresh()->routine_version])->assertRedirect();
         $started = $first->fresh()->started_at;
-        $this->post('/assignments/'.$correction->id.'/start')->assertRedirect();
+        $this->post('/assignments/'.$correction->id.'/start', ['version' => $this->noah->fresh()->routine_version])->assertRedirect();
         $this->assertEquals($correction->id, $this->noah->fresh()->current_assignment_id);
         $this->assertEquals('needs_changes', $correction->fresh()->status);
         $this->assertEquals('in_progress', $first->fresh()->status);

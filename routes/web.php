@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\BookController;
+use App\Http\Controllers\RoutineController;
 use App\Http\Controllers\SchoolController as School;
 use Illuminate\Support\Facades\Route;
 
@@ -10,6 +11,11 @@ Route::middleware('guest')->group(function () {
 });
 Route::middleware('auth')->group(function () {
     Route::get('/', [School::class, 'home'])->name('home');
+    Route::post('/routine', [RoutineController::class, 'transition'])->name('routine.transition');
+    Route::get('/routine/finish', [RoutineController::class, 'finish'])->name('routine.finish');
+    Route::post('/parent/timeline/{day}/periods', [RoutineController::class, 'correct'])->name('timeline.add');
+    Route::post('/parent/timeline/{day}/periods/{session}', [RoutineController::class, 'correct'])->name('timeline.correct');
+    Route::post('/parent/timeline/{day}', [RoutineController::class, 'correctDay'])->name('timeline.day');
     Route::post('/logout', [School::class, 'logout']);
     Route::get('/assignments/{assignment}', [School::class, 'assignment'])->name('assignment');
     Route::post('/assignments/{assignment}/start', [School::class, 'start']);

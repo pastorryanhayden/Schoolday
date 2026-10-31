@@ -182,3 +182,5 @@ php artisan schoolday messages --unread --compact
 
 - Production is `https://schoolday.haydenindustries.com`, isolated SSH user `schoolday@134.209.129.215`, application directory `/home/schoolday/schoolday.haydenindustries.com`, PHP `php8.4`. Run live CLI operations there; local demo data is separate. Production parent: `ryan.hayden@hey.com`. Never seed demos or copy local databases onto production.
 - Manage the book catalog with `schoolday books`, `book-add`, and `book-update` (JSON files, dry runs, retry keys). `schoolday schema book` describes fields. Plan items can use `book_id` to fill omitted defaults; specify the actual lesson/reference because references never advance automatically. Book edits preserve existing assignment text.
+
+- Use `schoolday timeline --date=...` for reported sessions and work/break totals. Read the current `version` before an authorized `timeline-correct` or `day-correct` mutation; use JSON files, a reason, dry runs, and retry keys. Preserve audit history. Never infer work time from device contact or old first-start timestamps, and never impersonate Noah’s day/activity controls during parent operations.

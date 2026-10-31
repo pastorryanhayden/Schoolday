@@ -129,7 +129,7 @@ CLI feature tests cover structured output, role/identity enforcement, read-only 
 
 Authorization is enforced in the controller before every action, including photo reads. Parents can plan and review; students can change only their own editable work. There is no registration, role-editing endpoint, or public photo directory. Worksheet files live on the private local disk, served through authenticated routes with `private, no-store` headers. Do not expose `storage/app/private` or symlink it into `public`. Session cookies use Laravel’s HTTP-only and SameSite protections; all mutations use CSRF protection. Login, messages, and uploads are rate limited. JPEG/PNG/WebP images are validated for type, size (10 MB each) and dimensions (10,000 px per side), with a 20-photo assignment limit.
 
-The current assignment is explicitly selected by starting/continuing it. First-start timestamps are preserved; starting another task leaves earlier work in progress. Tablet heartbeats update only `last_seen_at`, never work activity. A heartbeat or elapsed timer **does not prove attention, effort, or work completion**. Activity logs record app actions, not surveillance.
+The current activity is explicitly selected after Start my day. Each switch closes the previous reported session and starts another; first-start timestamps and unfinished work are preserved. Tablet heartbeats update only `last_seen_at`, never work activity. A heartbeat or elapsed timer **does not prove attention, effort, or work completion**. Activity logs record app actions, not surveillance.
 
 Dates use `America/Chicago` by default, configurable with `APP_TIMEZONE`. Recurrence uses ISO weekday numbers (Monday 1 through Sunday 7), an inclusive date range, and a unique `(recurrence_id, date)` index. Generation is idempotent and happens on date views and via:
 
@@ -207,3 +207,28 @@ ssh schoolday@134.209.129.215 'cd /home/schoolday/schoolday.haydenindustries.com
 ```
 
 HTTPS and the minutely Forge scheduler are configured. Production parent and student accounts are provisioned separately from Git. Back up the database using SQLite backup plus private storage and the environment/application key; an offsite backup destination has not yet been configured.
+
+## Daily routine and reported time
+
+Noah explicitly starts his day, starts each activity, takes breaks, resumes, and finishes his day. The assignment order is a suggestion: he can switch to any editable assignment due today or earlier. Switching closes the previous work period without submitting or completing that work. Stop this activity leaves the day open and records choosing time. Submitting the current assignment ends its work period; submitting another assignment does not interrupt the current activity. A break remembers the selected assignment for Resume; choosing a different assignment also ends the break.
+
+The laptop and tablet share one current activity. Visible pages poll every 15 seconds; activity changes show a refresh notice and disable outdated controls while keeping drafts intact. Every routine control includes the state version, and the server rejects stale changes even before polling catches up. Opening a page or checking device contact never starts or ends a session.
+
+Finish my day opens a checklist of unfinished/correction work and a separate count awaiting review. Noah can finish with work remaining; it stays unfinished. Reopening today preserves its original start and earlier sessions. A day left open overnight must be explicitly finished (or corrected by a parent) before a new day can start. Open periods keep counting until stopped; they are reported time, not proof of attention. No old session durations are inferred from legacy first-start timestamps, photos, or heartbeats.
+
+In the parent **Activity** tab, choose the date to see the full timeline, work/break/choosing totals, and time by assignment. Correct a period, insert a missed period into a gap, or correct day start/finish. All correction times use America/Chicago (including browser inputs). Corrections require a reason, cannot overlap or extend into the future/outside the day, and preserve the before/after records and editor in correction history. To add a missed break, shorten the overlapping work period first, then add the break in the gap. Closing an open period clears the selected activity; Noah chooses the next activity explicitly. Correcting an open day’s finish closes its open period at that time. Corrections never change submission or approval status.
+
+Codex can inspect and correct the same timeline on the live host:
+
+```sh
+php8.4 artisan schoolday timeline --date=today --compact
+php8.4 artisan schoolday schema timeline-correct
+php8.4 artisan schoolday timeline-correct --file=correction.json --dry-run
+php8.4 artisan schoolday timeline-correct --file=correction.json --key=correct-spelling-stop
+php8.4 artisan schoolday schema day-correct
+php8.4 artisan schoolday day-correct --file=day-correction.json --key=correct-day-finish
+```
+
+Read `timeline` first and use its `version` in corrections. `timeline-correct` takes `day_id`, optional `session_id`, `version`, `started_at`, `ended_at`, and `reason`; omit `session_id` and supply `kind` plus an assignment for a new work period. `day-correct` takes `day_id`, `version`, `started_at`, nullable `finished_at`, and `reason`. These support transactional dry runs and retry receipts. Parent CLI commands do not impersonate Noah’s day/activity buttons.
+
+Validation includes exact session durations, flexible order, break/resume, submission isolation, stale devices, role/ownership boundaries, day reopening/overnight behavior, auditable corrections, invalid/overlapping intervals, and CLI dry runs/retries. Browser checks cover the student controls, two-page stale state, parent correction saving, end-of-day reminders, and a 600 × 960 layout. Practice games and photo chat are subsequent features.

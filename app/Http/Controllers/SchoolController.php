@@ -9,6 +9,7 @@ use App\Models\Message;
 use App\Models\Photo;
 use App\Models\Recurrence;
 use App\Models\User;
+use App\Services\DailyRoutine;
 use App\Services\ParentActions;
 use App\Services\School;
 use Illuminate\Http\Request;
@@ -70,13 +71,16 @@ class SchoolController extends Controller
         $messages = Message::where('student_id', $student->id)->with(['sender', 'assignment'])->latest('id')->limit(100)->get()->reverse()->values();
         $activities = Activity::where(fn ($q) => $q->where('user_id', $student->id)->orWhereHas('assignment', fn ($a) => $a->where('student_id', $student->id)))->latest()->limit(20)->get();
         $unfinished = Assignment::where('student_id', $student->id)->whereDate('date', '<', today())->where('status', '!=', 'approved')->orderBy('date')->get();
-        $current = Assignment::where('student_id', $student->id)->whereKey($student->current_assignment_id)->whereIn('status', ['in_progress', 'needs_changes'])->first();
         $pending = Assignment::where('student_id', $student->id)->where('status', 'submitted')->orderBy('submitted_at')->get();
         $rules = Recurrence::where('student_id', $student->id)->where('active', true)->get();
 
         $books = Book::where('student_id', $student->id)->where('active', true)->orderBy('subject')->orderBy('title')->get();
 
-        return view('dashboard', compact('date', 'student', 'assignments', 'unread', 'messages', 'activities', 'unfinished', 'current', 'pending', 'rules', 'books'));
+        $routine = DailyRoutine::report($student, $date);
+        $current = ($routine['current']['kind'] ?? null) === 'work' ? Assignment::where('student_id', $student->id)->find($routine['current']['assignment_id']) : null;
+        $timelineAssignments = $r->user()->role === 'parent' ? Assignment::where('student_id', $student->id)->whereDate('date', '<=', $date)->orderBy('date')->orderBy('position')->get() : collect();
+
+        return view('dashboard', compact('date', 'student', 'assignments', 'unread', 'messages', 'activities', 'unfinished', 'current', 'pending', 'rules', 'books', 'routine', 'timelineAssignments'));
     }
 
     public function assignment(Request $r, Assignment $assignment)
@@ -85,20 +89,15 @@ class SchoolController extends Controller
         $assignment->load(['photos', 'book']);
         $books = $r->user()->role === 'parent' ? Book::where('student_id', $assignment->student_id)->where(fn ($query) => $query->where('active', true)->orWhere('id', $assignment->book_id))->orderBy('subject')->orderBy('title')->get() : collect();
 
-        return view('assignment', ['a' => $assignment, 'books' => $books]);
+        return view('assignment', ['a' => $assignment, 'books' => $books, 'routine' => DailyRoutine::report($assignment->student, today()->toDateString())]);
     }
 
     public function start(Request $r, Assignment $assignment)
     {
         $this->student($r, $assignment);
         $this->editable($assignment);
-        DB::transaction(function () use ($r, $assignment) {
-            $assignment = Assignment::lockForUpdate()->findOrFail($assignment->id);
-            $this->editable($assignment);
-            $assignment->update(['status' => $assignment->status === 'needs_changes' ? 'needs_changes' : 'in_progress', 'started_at' => $assignment->started_at ?? now()]);
-            $r->user()->update(['on_break' => false, 'current_assignment_id' => $assignment->id]);
-            School::record($r->user(), 'start', 'Started '.$assignment->title, $assignment);
-        });
+        $data = $r->validate(['version' => 'required|integer|min:0']);
+        DailyRoutine::transition($r->user(), 'activity-start', (int) $data['version'], $assignment->id);
 
         return back();
     }
@@ -171,12 +170,13 @@ class SchoolController extends Controller
         $this->student($r, $assignment);
         $data = $r->validate(['note' => 'nullable|string|max:4000']);
         DB::transaction(function () use ($r, $assignment, $data) {
+            $student = DailyRoutine::lock($r->user());
             $a = Assignment::lockForUpdate()->findOrFail($assignment->id);
             $this->editable($a);
             if ($a->requires_photo && ! $a->photos()->exists()) {
                 throw ValidationException::withMessages(['photo' => 'Add at least one worksheet photo before submitting.']);
             }
-            User::whereKey($r->user()->id)->where('current_assignment_id', $a->id)->update(['current_assignment_id' => null]);
+            DailyRoutine::submitted($student, $a);
             $kind = $a->revision ? 'resubmission' : 'submission';
             $a->update(['status' => 'submitted', 'note' => $data['note'] ?? $a->note, 'submitted_at' => now(), 'revision' => $a->revision + 1]);
             School::record($r->user(), $kind, ucfirst($kind).': '.$a->title.' (revision '.$a->revision.')'.($a->note ? ' — '.$a->note : ''), $a);
@@ -285,15 +285,14 @@ class SchoolController extends Controller
         }
         $student = $r->user()->role === 'student' ? $r->user() : User::where('role', 'student')->firstOrFail();
 
-        return response()->json(['last_seen' => $student->last_seen_at?->toIso8601String(), 'on_break' => $student->on_break, 'unread' => Message::where('student_id', $student->id)->where('sender_id', '!=', $r->user()->id)->whereNull('read_at')->count(), 'submitted' => Assignment::where('student_id', $student->id)->where('status', 'submitted')->count(), 'read_through' => Message::where('student_id', $student->id)->where('sender_id', $r->user()->id)->whereNotNull('read_at')->max('id') ?? 0, 'latest' => Activity::max('id') ?? 0]);
+        return response()->json(['last_seen' => $student->last_seen_at?->toIso8601String(), 'on_break' => $student->on_break, 'unread' => Message::where('student_id', $student->id)->where('sender_id', '!=', $r->user()->id)->whereNull('read_at')->count(), 'submitted' => Assignment::where('student_id', $student->id)->where('status', 'submitted')->count(), 'read_through' => Message::where('student_id', $student->id)->where('sender_id', $r->user()->id)->whereNotNull('read_at')->max('id') ?? 0, 'routine' => DailyRoutine::state($student), 'latest' => Activity::max('id') ?? 0]);
     }
 
     public function pause(Request $r)
     {
         abort_unless($r->user()->role === 'student', 403);
-        $data = $r->validate(['on_break' => 'required|boolean']);
-        $r->user()->update($data);
-        School::record($r->user(), $data['on_break'] ? 'break' : 'resume', $data['on_break'] ? 'Started a break' : 'Resumed after a break');
+        $data = $r->validate(['on_break' => 'required|boolean', 'version' => 'required|integer|min:0']);
+        DailyRoutine::transition($r->user(), $r->boolean('on_break') ? 'break' : 'resume', (int) $data['version']);
 
         return back();
     }

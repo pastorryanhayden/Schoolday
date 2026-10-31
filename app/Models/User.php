@@ -29,6 +29,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'last_seen_at' => 'datetime',
             'on_break' => 'boolean',
+            'routine_version' => 'integer',
         ];
     }
 }

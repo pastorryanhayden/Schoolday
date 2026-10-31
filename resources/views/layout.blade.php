@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="csrf-token" content="{{ csrf_token() }}"><meta name="theme-color" content="#244c40"><meta name="description" content="A little structure. Room to grow. Noah’s private schoolwork companion."><link rel="manifest" href="/manifest.webmanifest"><link rel="icon" type="image/svg+xml" href="/icon.svg"><title>@yield('title','Schoolday') · Noah’s Schoolday</title>@vite(['resources/css/app.css','resources/js/app.js'])</head>
-<body class="{{ auth()->check()&&auth()->user()->role==='student'?'student-account':'' }}" x-data="shell({{ auth()->check()?'true':'false' }}, {{ auth()->check()?\App\Models\Activity::max('id')??0:0 }})">
+<body class="{{ auth()->check()&&auth()->user()->role==='student'?'student-account':'' }}" x-data="shell({{ auth()->check()?'true':'false' }}, {{ auth()->check()?\App\Models\Activity::max('id')??0:0 }}, @js($routineState))">
 @auth
 <aside class="sidebar">
  <a href="/" class="brand"><span class="brand-mark"><x-icon name="book" size="25"/></span><span>schoolday<span class="brand-dot">.</span><small>A LITTLE STRUCTURE. ROOM TO GROW.</small></span></a>
@@ -11,6 +11,7 @@
 </aside>
 <div class="app-main"><header class="topbar"><span class="breadcrumb">Noah’s learning space <span>/</span> @yield('title','Day overview')</span><div class="topbar-right"><span class="network-dot" :class="online?'':'offline'"></span><span x-text="online?'Connected to schoolday':'Connection interrupted'"></span><span class="today-pill">{{ today()->format('D, M j') }}</span></div></header>
 <div class="live-alert" x-show="changed" x-cloak role="status">New activity is available. <a href="" @click.prevent="location.reload()">Refresh to see updates →</a></div>
+<div class="live-alert" x-show="routineStale" x-cloak role="status"><strong x-text="routineLabel"></strong> · Activity changed on another page or device. Your drafts are safe. <a href="" @click.prevent="location.reload()">Refresh before using activity controls →</a></div>
 <div class="network-alert" x-show="!online" x-cloak role="status">Connection interrupted. Keep this page open; drafts stay on this device. Retry when connected.</div>
 @else<div class="login-shell">@endauth
 <main class="page">
@@ -19,6 +20,7 @@
 @yield('content')
 </main></div>
 @auth @if(auth()->user()->role==='student')
-<nav class="student-actions" aria-label="Student quick actions"><a href="/?help=1#messages" class="btn primary"><x-icon name="message" size="18"/>Ask Dad</a><form action="/break" method="post">@csrf<input type="hidden" name="on_break" value="{{ auth()->user()->on_break?0:1 }}"><button class="btn secondary"><x-icon name="pause" size="16"/>{{ auth()->user()->on_break?'Resume work':'Take a break' }}</button></form></nav>
+<nav class="student-actions" aria-label="Student quick actions"><a href="/?help=1#messages" class="btn primary"><x-icon name="message" size="18"/>Ask Dad</a>
+@if($routineState['day'])<x-routine-action :action="($routineState['current']['kind'] ?? '') === 'break' ? 'resume' : 'break'" :version="$routineState['version']" :label="($routineState['current']['kind'] ?? '') === 'break' ? 'Resume work' : 'Take a break'"/>@else<a href="/" class="btn secondary">My schoolday</a>@endif</nav>
 @endif @endauth
 </body></html>

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Assignment;
 use App\Models\Message;
 use App\Models\Recurrence;
+use App\Models\SchoolDay;
 use App\Models\User;
 use App\Services\School;
 use Carbon\Carbon;
@@ -79,13 +80,18 @@ class SchooldayCliTest extends TestCase
         $submitted = $this->assignment($noah, ['status' => 'submitted', 'revision' => 1, 'submitted_at' => now()]);
         $older = $this->assignment($noah, ['date' => '2026-10-30']);
         $noah->update(['current_assignment_id' => $current->id, 'last_seen_at' => now()->subMinutes(2), 'on_break' => true]);
+        $day = SchoolDay::create(['student_id' => $noah->id, 'date' => today(), 'started_at' => now()->subMinutes(10)]);
+        $day->sessions()->create(['kind' => 'work', 'label' => 'Math · Fractions', 'assignment_id' => $current->id, 'started_at' => now()->subMinutes(10), 'ended_at' => now()->subMinutes(5)]);
+        $day->sessions()->create(['kind' => 'break', 'label' => 'Break', 'started_at' => now()->subMinutes(5)]);
         Message::create(['sender_id' => $noah->id, 'student_id' => $noah->id, 'body' => 'Help', 'help' => true]);
         Recurrence::create(['student_id' => $noah->id, 'starts_on' => '2026-11-02', 'weekdays' => [1], 'assignment_data' => ['subject' => 'Spelling', 'title' => 'Words', 'instructions' => 'Practice.']]);
 
         $result = $this->runCli('status');
 
-        $this->assertSame($current->id, $result['data']['current_assignment']['id']);
-        $this->assertSame(600, $result['data']['current_assignment']['elapsed_seconds_including_breaks']);
+        $this->assertNull($result['data']['current_assignment']);
+        $this->assertSame('break', $result['data']['routine']['current']['kind']);
+        $this->assertSame(['work' => 300, 'break' => 300, 'idle' => 0], $result['data']['routine']['totals_seconds']);
+        $this->assertSame(600, $result['data']['assignments'][0]['elapsed_seconds_including_breaks']);
         $this->assertSame(false, $result['data']['tablet']['recent_contact']);
         $this->assertSame(120, $result['data']['tablet']['seconds_since_contact']);
         $this->assertSame(1, $result['data']['unread_help_requests']);

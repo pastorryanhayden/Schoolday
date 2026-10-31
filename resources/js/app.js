@@ -60,7 +60,9 @@ async function photoStore(method, value) {
         };
     });
 }
-Alpine.data("shell", (authenticated, latest) => ({
+Alpine.data("shell", (authenticated, latest, routine) => ({
+    routineStale: false,
+    routineLabel: routine?.label ?? "Schoolday is not running",
     online: navigator.onLine,
     changed: false,
     unread: 0,
@@ -81,7 +83,7 @@ Alpine.data("shell", (authenticated, latest) => ({
     lastSeen: null,
     onBreak: false,
     tabletStatus: "Checking…",
-    lastContact: "Checking tablet contact…",
+    lastContact: "Checking device contact…",
     async init() {
         window.addEventListener("online", () => {
             this.online = true;
@@ -98,6 +100,8 @@ Alpine.data("shell", (authenticated, latest) => ({
                     this.unread = data.unread;
                     this.readThrough = data.read_through;
                     this.nowMs = Date.now();
+                    if (routine && data.routine.version !== routine.version) this.routineStale = true;
+                    this.routineLabel = data.routine.label;
                     this.lastSeen = data.last_seen;
                     this.onBreak = data.on_break;
                     const elapsed = data.last_seen
@@ -105,14 +109,12 @@ Alpine.data("shell", (authenticated, latest) => ({
                               (Date.now() - Date.parse(data.last_seen)) / 1000,
                           )
                         : null;
-                    this.tabletStatus = data.on_break
-                        ? "On a break"
-                        : elapsed !== null && elapsed < 90
+                    this.tabletStatus = elapsed !== null && elapsed < 90
                           ? "Connected"
                           : "No recent contact";
                     this.lastContact =
                         elapsed === null
-                            ? "Waiting for the tablet to check in."
+                            ? "Waiting for a device to check in."
                             : "Last contact " +
                               (elapsed < 60
                                   ? elapsed + " seconds ago"
