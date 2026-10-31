@@ -198,7 +198,7 @@ A plan item may contain `book_id` and omit default assignment fields. Explicit f
 
 ## Production host
 
-Schoolday is hosted at https://schoolday.haydenindustries.com on Forge server `church-websites-2` (1003587), isolated site user `schoolday`, site 3475035. Source: `pastorryanhayden/Schoolday`, branch `codex/initial-deploy`. The deployment script runs `deploy.sh`; it preserves the SQLite database and private storage. Do not run the demo seeder on this host.
+Schoolday is hosted at https://schoolday.haydenindustries.com on Forge server `church-websites-2` (1003587), isolated site user `schoolday`, site 3475035. Source: `pastorryanhayden/Schoolday`, branch `codex/initial-deploy`. The deployment script clears cached configuration and runs `deploy.sh`; it preserves the SQLite database and private storage. Do not run the demo seeder on this host.
 
 Run live parent operations through SSH:
 
@@ -206,4 +206,4 @@ Run live parent operations through SSH:
 ssh schoolday@134.209.129.215 'cd /home/schoolday/schoolday.haydenindustries.com && php8.4 artisan schoolday status --compact'
 ```
 
-Credentials are provisioned separately from Git. Back up the database using SQLite backup plus private storage and the environment/application key; an offsite backup destination has not yet been configured.
+HTTPS and the minutely Forge scheduler are configured. Production parent and student accounts are provisioned separately from Git. Back up the database using SQLite backup plus private storage and the environment/application key; an offsite backup destination has not yet been configured.
