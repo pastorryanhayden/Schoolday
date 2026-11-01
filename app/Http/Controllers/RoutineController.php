@@ -32,8 +32,8 @@ class RoutineController extends Controller
     {
         abort_unless($request->user()->role === 'student', 403);
         $routine = DailyRoutine::report($request->user(), today()->toDateString());
-        $remaining = Assignment::where('student_id', $request->user()->id)->whereDate('date', '<=', today())->whereNotIn('status', ['submitted', 'approved'])->orderBy('date')->orderBy('position')->get();
-        $pending = Assignment::where('student_id', $request->user()->id)->where('status', 'submitted')->count();
+        $remaining = Assignment::where('is_extra_practice', false)->where('student_id', $request->user()->id)->whereDate('date', '<=', today())->whereNotIn('status', ['submitted', 'approved'])->orderBy('date')->orderBy('position')->get();
+        $pending = Assignment::where('is_extra_practice', false)->where('student_id', $request->user()->id)->where('status', 'submitted')->count();
 
         return view('finish-day', compact('routine', 'remaining', 'pending'));
     }

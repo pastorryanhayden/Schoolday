@@ -1,14 +1,15 @@
 @extends('layout')
 @section('title', 'Multiplication practice')
+@section('body-class', auth()->user()->role === 'student' ? 'game-mode' : '')
 @section('content')
 @php($parent = auth()->user()->role === 'parent')
 <a href="/?date={{ $a->date->toDateString() }}" class="back-link">← Back to the schoolday</a>
 <div class="page-heading"><div><div class="eyebrow">Math · {{ $a->date->format('M j') }}</div><h1>{{ $a->title }}</h1></div>@if($parent)<x-status :status="$a->status"/>@endif</div>
 @if($a->feedback)<section class="feedback panel mb-6"><h2>Feedback from Dad</h2><p>{{ $a->feedback }}</p></section>@endif
 @if(!$parent)
-<section class="panel practice-game" @keydown.enter.window="if(mode==='feedback' &amp;&amp; !busy &amp;&amp; !routineStale){$event.preventDefault();next()}" x-data="practiceGame(@js(['url' => route('practice.act', $a), 'version' => $routine['version'], 'summary' => $summary, 'status' => $a->status, 'complete' => in_array($a->status, ['submitted', 'approved'])]))">
+<section class="panel practice-game" @keydown.enter.window="if(mode==='feedback' &amp;&amp; !busy &amp;&amp; !routineStale){$event.preventDefault();next()}" x-data="practiceGame(@js(['url' => route('practice.act', $a), 'version' => $routine['version'], 'summary' => $summary, 'status' => $a->status, 'extra' => $a->is_extra_practice, 'complete' => in_array($a->status, ['submitted', 'approved'])]))">
     <div class="flex-between gap-3 flex-wrap"><span class="eyebrow">{{ $a->fact_min }}–{{ $a->fact_max }} TIMES TABLES</span><span class="small muted" x-text="summary.round.correct+' / '+summary.round.attempts+' correct'"></span></div>
-    <p class="muted mt-3">{{ $a->instructions }}</p>
+    <p class="muted mt-3" x-show="mode==='ready' || mode==='paused'">{{ $a->instructions }}</p>
     <div class="progress my-5" role="progressbar" aria-label="Practice progress" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="Math.min(100,Math.round(100*(summary.question_target ? summary.round.attempts/summary.question_target : summary.round.practice_ms/summary.target_ms)))"><span :style="'width:'+Math.min(100,100*(summary.question_target ? summary.round.attempts/summary.question_target : summary.round.practice_ms/summary.target_ms))+'%'"></span></div>
     <div x-show="mode==='ready' || mode==='paused'" class="stack text-center py-6">
         <h2 x-text="mode==='ready'?'Ready to practice?':'Practice is paused.'"></h2>
@@ -34,11 +35,11 @@
         <button class="btn primary mx-auto" :disabled="busy || routineStale" @click="next()">Next fact →</button>
     </div>
     <div x-show="mode==='complete'" class="stack text-center py-6" role="status">
-        <h2>Practice complete. Nice work!</h2><p class="muted" x-text="approved?'Dad approved this practice.':'Your results are saved for Dad’s review.'">Your results are saved for Dad’s review.</p><p><strong x-text="summary.round.correct+' of '+summary.round.attempts+' correct'"></strong></p><a class="btn primary mx-auto" href="{{ route('home') }}">Choose my next activity →</a>
+        <h2>Practice complete. Nice work!</h2><p class="muted" x-text="extra?'Extra practice saved. Play another round whenever you like.':(approved?'Dad approved this practice.':'Your results are saved for Dad’s review.')">Your results are saved for Dad’s review.</p><p><strong x-text="summary.round.correct+' of '+summary.round.attempts+' correct'"></strong></p><button type="button" class="btn primary mx-auto" @click="openGames($el)" x-show="extra">Play another round →</button><a class="btn secondary mx-auto" href="{{ route('home') }}">Back to my schoolday →</a>
     </div>
     <p class="error-text mt-4" x-show="error" x-text="error" role="alert"></p>
     <button class="text-btn mt-5" x-show="mode==='question' || mode==='feedback' || mode==='unsaved'" :disabled="busy || routineStale" @click="pause()">Pause practice</button>
-    <p class="footnote">Use the keypad or type on your laptop. Enter checks an answer and moves to the next fact. Leaving this page or a long gap pauses the question. Saved answers and brief feedback time count toward practice; idle time does not.</p>
+    <p class="footnote" x-show="mode==='ready' || mode==='paused'">Use the keypad or type on your laptop. Enter checks an answer and moves to the next fact. Leaving this page or a long gap pauses the question. Saved answers and brief feedback time count toward practice; idle time does not.</p>
     <div class="chart-modal" x-show="chartOpen" x-cloak @keydown.escape.window="if(chartOpen) closeChart()" @keydown.tab.prevent="$event.target===$refs.chartClose ? $refs.chartInfo.focus() : $refs.chartClose.focus()" role="dialog" aria-modal="true" aria-label="12 by 12 multiplication chart">
         <div class="chart-panel" @click.outside="closeChart()"><div class="flex-between gap-3"><h2>Multiplication chart</h2><button type="button" class="btn secondary" x-ref="chartClose" @click="closeChart()">Back to question ×</button></div><p class="muted small mt-3" tabindex="0" x-ref="chartInfo">Find the first number down the left and the second across the top. Using the chart tells Dad which fact needs more practice.</p>
         <div class="overflow-x-auto mt-4"><table class="multiplication-chart"><caption class="sr-only">Multiplication table from 1 to 12. Each cell is its row times its column.</caption><thead><tr><th scope="col">×</th>@for($column=1;$column<=12;$column++)<th scope="col">{{ $column }}</th>@endfor</tr></thead><tbody>@for($row=1;$row<=12;$row++)<tr><th scope="row">{{ $row }}</th>@for($column=1;$column<=12;$column++)<td>{{ $row*$column }}</td>@endfor</tr>@endfor</tbody></table></div></div>

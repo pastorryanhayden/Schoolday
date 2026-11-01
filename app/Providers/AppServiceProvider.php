@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Models\Game;
 use App\Models\User;
 use App\Services\DailyRoutine;
 use Illuminate\Support\Facades\View;
@@ -26,6 +27,7 @@ class AppServiceProvider extends ServiceProvider
             $actor = auth()->user();
             $student = $actor?->role === 'student' ? $actor : ($actor ? User::where('role', 'student')->first() : null);
             $view->with('routineState', $student ? DailyRoutine::state($student) : null);
+            $view->with('libraryGames', $student ? Game::where('student_id', $student->id)->where('active', true)->orderBy('title')->get() : collect());
         });
     }
 }

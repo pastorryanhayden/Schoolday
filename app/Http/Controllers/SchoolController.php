@@ -66,12 +66,12 @@ class SchoolController extends Controller
         $date = $r->input('date', today()->toDateString());
         School::generate($date);
         $student = $r->user()->role === 'student' ? $r->user() : User::where('role', 'student')->firstOrFail();
-        $assignments = Assignment::where('student_id', $student->id)->whereDate('date', $date)->with(['photos', 'book'])->orderBy('position')->orderBy('id')->get();
+        $assignments = Assignment::where('is_extra_practice', false)->where('student_id', $student->id)->whereDate('date', $date)->with(['photos', 'book'])->orderBy('position')->orderBy('id')->get();
         $unread = Message::where('student_id', $student->id)->where('sender_id', '!=', $r->user()->id)->whereNull('read_at')->count();
         $messages = Message::where('student_id', $student->id)->with(['sender', 'assignment'])->latest('id')->limit(100)->get()->reverse()->values();
         $activities = Activity::where(fn ($q) => $q->where('user_id', $student->id)->orWhereHas('assignment', fn ($a) => $a->where('student_id', $student->id)))->latest()->limit(20)->get();
-        $unfinished = Assignment::where('student_id', $student->id)->whereDate('date', '<', today())->where('status', '!=', 'approved')->orderBy('date')->get();
-        $pending = Assignment::where('student_id', $student->id)->where('status', 'submitted')->orderBy('submitted_at')->get();
+        $unfinished = Assignment::where('is_extra_practice', false)->where('student_id', $student->id)->whereDate('date', '<', today())->where('status', '!=', 'approved')->orderBy('date')->get();
+        $pending = Assignment::where('is_extra_practice', false)->where('student_id', $student->id)->where('status', 'submitted')->orderBy('submitted_at')->get();
         $rules = Recurrence::where('student_id', $student->id)->where('active', true)->get();
 
         $books = Book::where('student_id', $student->id)->where('active', true)->orderBy('subject')->orderBy('title')->get();

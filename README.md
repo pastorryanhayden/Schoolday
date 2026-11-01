@@ -290,3 +290,20 @@ Example plan:
 ```
 
 `practice ID` and `assignment ID` include per-word and per-mode spelling results. `facts` continues to report multiplication only. Weekly lists also work with `recurring-add`.
+
+
+### Game drawer and optional extra practice
+
+Students open **Games** in the top navigation to pick a reusable game. Each Play creates a separate optional round, so Noah can replay times tables or spelling throughout the day. Start the schoolday first. Game mode has its own dark play surface; parent reports retain the normal planner layout. Opening the drawer pauses an active question. Each round retains its settings, answer history, help usage, and recorded time. Extra practice does not add required assignments, carryover, day-finish obligations, or review-queue items. Its results still save for Dad, can be inspected/reviewed individually, and contribute to the timeline and multiplication fact history. Optional rounds are excluded when copying or reordering the required daily plan.
+
+Parents use **Games** to add/edit games, configure 1–12 factor ranges, add a named weekly spelling list, or archive old games. Updates affect future rounds only; archiving hides future launches while preserving existing rounds. A required game remains a normal practice assignment scheduled in the Planner. Supported game types are multiplication and the three spelling modes; new game mechanics require implementation before they can be selected. The library can hold as many lesson-specific lists and factor ranges as needed. Existing students receive a standard times-table game, and previously scheduled spelling-game lists are copied into the library during migration.
+
+```sh
+php artisan schoolday games --compact
+php artisan schoolday schema game
+php artisan schoolday game-add --file=game.json --dry-run
+php artisan schoolday game-add --file=game.json --key=spelling-week-two
+php artisan schoolday game-update GAME_ID --file=patch.json --key=archive-week-one
+```
+
+Game JSON accepts `activity_type`, `title`, `instructions`, `minutes`, `question_target`, `fact_min`, `fact_max`, `spelling_words`, and `active`. Example: `{"activity_type":"spelling","title":"Spelling · week two","minutes":5,"spelling_words":["friend","because","different"]}`. Archive with `{"active":false}`. Games are optional by default and have no assignment date. `schoolday status` separates `extra_practice` from required progress. `assignments --date=...` includes optional rounds with `is_extra_practice` and `game_id`, and `assignment ID` / `practice ID` inspect their results. No CLI command plays a round on Noah’s behalf.

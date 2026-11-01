@@ -5,11 +5,13 @@ namespace App\Console\Commands;
 use App\Models\Activity;
 use App\Models\Assignment;
 use App\Models\Book;
+use App\Models\Game;
 use App\Models\Message;
 use App\Models\Recurrence;
 use App\Models\User;
 use App\Services\CliOperations;
 use App\Services\DailyRoutine;
+use App\Services\GameLibrary;
 use App\Services\ParentActions;
 use App\Services\PracticeGame;
 use Illuminate\Console\Command;
@@ -25,7 +27,7 @@ use Throwable;
 class SchooldayCommand extends Command
 {
     protected $signature = 'schoolday
-        {action=help : help, schema, status, assignments, assignment, plan, update, reorder, copy, review, messages, message, read, activity, recurring, recurring-add, recurring-stop, books, book-add, book-update, timeline, timeline-correct, day-correct, practice, facts}
+        {action=help : help, schema, status, assignments, assignment, plan, update, reorder, copy, review, messages, message, read, activity, recurring, recurring-add, recurring-stop, books, book-add, book-update, timeline, timeline-correct, day-correct, practice, facts, games, game-add, game-update}
         {target? : Assignment/rule ID, or schema name}
         {--as= : Parent email or numeric ID; required if there are multiple parents}
         {--date= : YYYY-MM-DD, today, tomorrow, or yesterday (default today)}
@@ -59,10 +61,11 @@ class SchooldayCommand extends Command
         'read' => ['through'], 'activity' => ['after', 'limit'],
         'recurring' => [], 'recurring-add' => ['file'], 'recurring-stop' => [],
         'books' => [], 'book-add' => ['file'], 'book-update' => ['file'],
+        'games' => [], 'game-add' => ['file'], 'game-update' => ['file'],
         'practice' => [], 'facts' => [], 'timeline' => ['date'], 'timeline-correct' => ['file'], 'day-correct' => ['file'],
     ];
 
-    private const MUTATIONS = ['plan', 'update', 'reorder', 'copy', 'review', 'message', 'read', 'recurring-add', 'recurring-stop', 'book-add', 'book-update', 'timeline-correct', 'day-correct'];
+    private const MUTATIONS = ['plan', 'update', 'reorder', 'copy', 'review', 'message', 'read', 'recurring-add', 'recurring-stop', 'book-add', 'book-update', 'timeline-correct', 'day-correct', 'game-add', 'game-update'];
 
     public function handle(): int
     {
@@ -116,7 +119,7 @@ class SchooldayCommand extends Command
             $supplied = $option === 'limit' ? $this->input->hasParameterOption('--limit') : ($value !== null && $value !== false);
             abort_if($supplied && ! in_array($option, $allowed, true), 422, '--'.$option.' is not supported for '.$action.'.');
         }
-        abort_if($this->argument('target') !== null && ! in_array($action, ['schema', 'assignment', 'update', 'review', 'recurring-stop', 'book-update', 'practice'], true), 422, 'This action does not accept a positional target.');
+        abort_if($this->argument('target') !== null && ! in_array($action, ['schema', 'assignment', 'update', 'review', 'recurring-stop', 'book-update', 'practice', 'game-update'], true), 422, 'This action does not accept a positional target.');
     }
 
     private function parentAccount(): User
@@ -183,8 +186,8 @@ class SchooldayCommand extends Command
             'read' => ['through' => $this->integer($this->option('through'), 'through')],
             'copy' => ['from' => $this->date($this->option('date')), 'to' => $this->date($this->requiredOption('to'))],
             'reorder' => ['date' => $this->date($this->option('date')), 'ids' => array_map(fn (string $id): int => $this->integer($id), explode(',', $this->requiredOption('ids')))],
-            'recurring-add', 'book-add', 'timeline-correct', 'day-correct' => $this->jsonInput(),
-            'book-update' => ['id' => $this->integer($this->argument('target')), 'patch' => $this->jsonInput()],
+            'recurring-add', 'book-add', 'timeline-correct', 'day-correct', 'game-add' => $this->jsonInput(),
+            'game-update', 'book-update' => ['id' => $this->integer($this->argument('target')), 'patch' => $this->jsonInput()],
             'recurring-stop' => ['id' => $this->integer($this->argument('target'))],
         };
     }
@@ -246,6 +249,8 @@ class SchooldayCommand extends Command
             'recurring-add' => ['recurrence' => ParentActions::recurrence($parent, $payload)->toArray()],
             'recurring-stop' => ['recurrence' => ParentActions::stopRecurrence($parent, $payload['id'])->toArray()],
             'timeline-correct', 'day-correct' => $this->correctTimeline($action, $parent, $payload),
+            'game-add' => ['game' => GameLibrary::save($parent, $payload)->toArray()],
+            'game-update' => ['game' => GameLibrary::save($parent, $payload['patch'], $payload['id'])->toArray()],
             'book-add' => ['book' => ParentActions::saveBook($parent, $payload)->toArray()],
             'book-update' => ['book' => ParentActions::saveBook($parent, $payload['patch'], $payload['id'])->toArray()],
         };
@@ -253,7 +258,7 @@ class SchooldayCommand extends Command
 
     private function createPlan(User $parent, array $payload): array
     {
-        $next = (Assignment::where('student_id', ParentActions::student()->id)->whereDate('date', $payload['date'])->max('position') ?? -1) + 1;
+        $next = (Assignment::where('is_extra_practice', false)->where('student_id', ParentActions::student()->id)->whereDate('date', $payload['date'])->max('position') ?? -1) + 1;
         $assignments = [];
         foreach ($payload['assignments'] as $index => $data) {
             $assignments[] = $this->assignmentData(ParentActions::create($parent, $data + ['date' => $payload['date'], 'position' => $next + $index]));
@@ -296,6 +301,7 @@ class SchooldayCommand extends Command
             'timeline' => DailyRoutine::report($student, $this->date($this->option('date'))),
             'practice' => PracticeGame::report(ParentActions::assignment($parent, $this->integer($this->argument('target')))),
             'facts' => PracticeGame::facts($student),
+            'games' => ['games' => Game::where('student_id', $student->id)->withCount('rounds')->orderByDesc('active')->orderBy('title')->get()->toArray()],
             'books' => ['books' => Book::where('student_id', $student->id)->orderByDesc('active')->orderBy('subject')->orderBy('id')->get()->toArray()],
             'recurring' => ['recurrences' => Recurrence::where('student_id', $student->id)->orderBy('id')->get()->toArray()],
         };
@@ -304,7 +310,7 @@ class SchooldayCommand extends Command
     private function status(User $parent, User $student): array
     {
         $date = $this->date($this->option('date'));
-        $assignments = Assignment::where('student_id', $student->id)->whereDate('date', $date)->orderBy('position')->orderBy('id')->get();
+        $assignments = Assignment::where('is_extra_practice', false)->where('student_id', $student->id)->whereDate('date', $date)->orderBy('position')->orderBy('id')->get();
         $routine = DailyRoutine::report($student, $date);
         $current = ($routine['current']['kind'] ?? null) === 'work' ? Assignment::where('student_id', $student->id)->find($routine['current']['assignment_id']) : null;
         $seconds = $student->last_seen_at === null ? null : max(0, (int) $student->last_seen_at->diffInSeconds(now()));
@@ -317,8 +323,9 @@ class SchooldayCommand extends Command
             'current_assignment' => $current === null ? null : $this->assignmentSummary($current),
             'progress' => ['total' => $assignments->count(), 'by_status' => $assignments->countBy('status')->all()],
             'assignments' => $assignments->map($this->assignmentSummary(...))->all(),
-            'awaiting_review' => Assignment::where('student_id', $student->id)->where('status', 'submitted')->orderBy('submitted_at')->orderBy('id')->get()->map($this->assignmentSummary(...))->all(),
-            'earlier_unfinished' => Assignment::where('student_id', $student->id)->whereDate('date', '<', $date)->where('status', '!=', 'approved')->orderBy('date')->orderBy('position')->orderBy('id')->get()->map($this->assignmentSummary(...))->all(),
+            'extra_practice' => Assignment::where('is_extra_practice', true)->where('student_id', $student->id)->whereDate('date', $date)->orderBy('id')->get()->map($this->assignmentSummary(...))->all(),
+            'awaiting_review' => Assignment::where('is_extra_practice', false)->where('student_id', $student->id)->where('status', 'submitted')->orderBy('submitted_at')->orderBy('id')->get()->map($this->assignmentSummary(...))->all(),
+            'earlier_unfinished' => Assignment::where('is_extra_practice', false)->where('student_id', $student->id)->whereDate('date', '<', $date)->where('status', '!=', 'approved')->orderBy('date')->orderBy('position')->orderBy('id')->get()->map($this->assignmentSummary(...))->all(),
             'unread_messages' => Message::where('student_id', $student->id)->where('sender_id', '!=', $parent->id)->whereNull('read_at')->count(),
             'unread_help_requests' => Message::where('student_id', $student->id)->where('sender_id', '!=', $parent->id)->where('help', true)->whereNull('read_at')->count(),
         ];
@@ -343,12 +350,12 @@ class SchooldayCommand extends Command
 
     private function assignmentSummary(Assignment $assignment): array
     {
-        return array_intersect_key($this->assignmentData($assignment), array_flip(['id', 'activity_type', 'fact_min', 'fact_max', 'question_target', 'spelling_words', 'book_id', 'date', 'subject', 'title', 'status', 'position', 'minutes', 'requires_photo', 'revision', 'started_at', 'submitted_at', 'elapsed_seconds_including_breaks']));
+        return array_intersect_key($this->assignmentData($assignment), array_flip(['id', 'is_extra_practice', 'game_id', 'activity_type', 'fact_min', 'fact_max', 'question_target', 'spelling_words', 'book_id', 'date', 'subject', 'title', 'status', 'position', 'minutes', 'requires_photo', 'revision', 'started_at', 'submitted_at', 'elapsed_seconds_including_breaks']));
     }
 
     private function assignmentData(Assignment $assignment): array
     {
-        return $assignment->only(['id', 'student_id', 'recurrence_id', 'activity_type', 'fact_min', 'fact_max', 'question_target', 'spelling_words', 'book_id', 'subject', 'title', 'instructions', 'reference', 'minutes', 'requires_photo', 'position', 'status', 'note', 'feedback', 'revision']) + [
+        return $assignment->only(['id', 'student_id', 'recurrence_id', 'is_extra_practice', 'game_id', 'activity_type', 'fact_min', 'fact_max', 'question_target', 'spelling_words', 'book_id', 'subject', 'title', 'instructions', 'reference', 'minutes', 'requires_photo', 'position', 'status', 'note', 'feedback', 'revision']) + [
             'date' => $assignment->date->toDateString(), 'started_at' => $assignment->started_at?->toIso8601String(), 'submitted_at' => $assignment->submitted_at?->toIso8601String(), 'approved_at' => $assignment->approved_at?->toIso8601String(),
             'elapsed_seconds_including_breaks' => $assignment->started_at === null ? null : max(0, (int) $assignment->started_at->diffInSeconds(now())),
         ];
@@ -404,6 +411,9 @@ class SchooldayCommand extends Command
             'message --file=- [--assignment=ID]' => 'Send a parent message from stdin. --body is available for short text.',
             'read --through=ID' => 'Explicitly mark incoming messages through a visible message ID read.',
             'practice ID' => 'Results for a practice assignment; facts shows lifetime accuracy and recall by fact.',
+            'games' => 'List reusable games, their settings, active state, and extra-round counts.',
+            'game-add --file=game.json' => 'Add an optional game to Noah’s drawer. Use schema game.',
+            'game-update ID --file=patch.json' => 'Update future rounds or archive with active=false; earlier rounds keep their settings.',
             'facts' => 'Multiplication accuracy and recent correct response speed by fact. Read-only.',
             'timeline [--date=today]' => 'Reported day, periods, work/break totals, correction history, and version. Read-only.',
             'timeline-correct --file=correction.json' => 'Correct a period, or add a gap period when session_id is omitted. Requires inspected version and a reason.',
@@ -415,7 +425,7 @@ class SchooldayCommand extends Command
             'recurring' => 'List active and stopped recurrence rules.',
             'recurring-add --file=rule.json' => 'Create a weekday recurrence and generate its first date if due.',
             'recurring-stop ID' => 'Stop future generation; preserve existing assignments.',
-            'schema [plan|update|recurring-add|book|multiplication|spelling|timeline-correct|day-correct]' => 'Show accepted JSON fields and a working example.',
+            'schema [plan|update|recurring-add|book|game|multiplication|spelling|timeline-correct|day-correct]' => 'Show accepted JSON fields and a working example.',
         ], 'contract' => [
             'output' => 'JSON by default; --compact emits one line. schema_version is 1. All success and handled error results are JSON.',
             'actor' => '--as=parent-email or ID; auto-selected only when exactly one parent exists. CLI host/SSH access is trusted administrative access, not a student-facing API.',
@@ -436,11 +446,12 @@ class SchooldayCommand extends Command
             'update' => ['schema' => 'update', 'allowed_fields' => ParentActions::ASSIGNMENT_FIELDS, 'unknown_fields' => 'rejected', 'example' => ['instructions' => 'Complete practice problems 1–12.', 'requires_photo' => true]],
             'timeline-correct' => ['schema' => 'timeline-correct', 'example' => ['day_id' => 1, 'session_id' => 2, 'version' => 3, 'started_at' => '2026-11-02T08:05:00-06:00', 'ended_at' => '2026-11-02T08:30:00-06:00', 'reason' => 'Forgot to stop before a break.'], 'new_period' => 'Omit session_id; supply kind work|break|idle and assignment_id for work. No overlaps or future times.'],
             'day-correct' => ['schema' => 'day-correct', 'example' => ['day_id' => 1, 'version' => 3, 'started_at' => '2026-11-02T08:05:00-06:00', 'finished_at' => '2026-11-02T12:00:00-06:00', 'reason' => 'Forgot to finish the day.']],
+            'game' => ['schema' => 'game', 'allowed_fields' => GameLibrary::FIELDS, 'example' => ['activity_type' => 'spelling', 'title' => 'Spelling · week of November 2', 'minutes' => 5, 'spelling_words' => ['because', 'friend', 'different']], 'notes' => 'game-add creates a reusable optional game. game-update changes future rounds; active=false archives it. Extra rounds appear in status.extra_practice and assignment detail, never required progress or copy-day plans.'],
             'spelling' => ['schema' => 'spelling', 'plan_example' => ['date' => today()->toDateString(), 'assignments' => [['activity_type' => 'spelling', 'minutes' => 5, 'spelling_words' => ['because', 'friend', 'different']]]], 'notes' => 'Rotates study, listen, and choose modes. Enter 1–50 unique English words (letters, apostrophes, hyphens). Minutes 1–15 or optional question_target 1–100. Practice ID includes per-word and per-mode results. Copy and recurrence retain the list; update future unstarted work for a new week.'],
             'multiplication' => ['schema' => 'multiplication', 'plan_example' => ['date' => today()->toDateString(), 'assignments' => [['activity_type' => 'multiplication', 'minutes' => 5, 'fact_min' => 1, 'fact_max' => 12]]], 'notes' => 'Use plan or recurring-add with activity_type=multiplication. Minutes 1–15; factors 1–12. Optional question_target 1–100 finishes after that many answers instead of the time target. Photo requirements must be false. Completed practice is submitted for parent review.'],
             'book' => ['schema' => 'book', 'required' => ['subject', 'title'], 'optional' => ['publisher', 'level', 'reference', 'instructions', 'minutes', 'requires_photo', 'active'], 'example' => ['subject' => 'Math', 'title' => 'Math workbook', 'publisher' => 'Teaching Textbooks', 'level' => null, 'reference' => 'Lesson 43', 'instructions' => 'Complete the lesson and record your score.', 'minutes' => 40, 'requires_photo' => false, 'active' => true]],
             'recurring-add' => ['schema' => 'recurring-add', 'required' => ['date', 'subject', 'title', 'instructions', 'weekdays'], 'weekdays' => 'ISO numbers: Monday 1 through Sunday 7; no duplicates.', 'optional' => ['activity_type', 'spelling_words', 'fact_min', 'fact_max', 'question_target', 'reference', 'minutes', 'requires_photo', 'position', 'ends_on'], 'example' => $example + ['date' => today()->addDay()->toDateString(), 'weekdays' => [1, 2, 3, 4, 5], 'ends_on' => null]],
-            default => abort(422, 'Unknown schema. Choose plan, update, recurring-add, book, multiplication, spelling, timeline-correct, or day-correct.'),
+            default => abort(422, 'Unknown schema. Choose plan, update, recurring-add, book, game, multiplication, spelling, timeline-correct, or day-correct.'),
         };
     }
 

@@ -139,7 +139,7 @@ class PracticeGame
         self::interrupt($assignment);
         DailyRoutine::submitted($student, $assignment);
         $assignment->update(['status' => 'submitted', 'revision' => $revision, 'submitted_at' => now()]);
-        School::record($student, 'practice_complete', 'Completed '.$assignment->activity_type.' practice (round '.$revision.'); ready for Dad’s review', $assignment);
+        School::record($student, 'practice_complete', 'Completed '.$assignment->activity_type.' practice (round '.$revision.')'.($assignment->is_extra_practice ? '; extra practice saved' : '; ready for Dad’s review'), $assignment);
 
         return true;
     }

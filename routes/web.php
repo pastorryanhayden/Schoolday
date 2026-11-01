@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\BookController;
+use App\Http\Controllers\GameController;
 use App\Http\Controllers\PracticeController;
 use App\Http\Controllers\RoutineController;
 use App\Http\Controllers\SchoolController as School;
@@ -18,6 +19,10 @@ Route::middleware('auth')->group(function () {
     Route::post('/parent/timeline/{day}/periods/{session}', [RoutineController::class, 'correct'])->name('timeline.correct');
     Route::post('/parent/timeline/{day}', [RoutineController::class, 'correctDay'])->name('timeline.day');
     Route::post('/logout', [School::class, 'logout']);
+    Route::get('/games', [GameController::class, 'index'])->name('games');
+    Route::post('/games/{game}/play', [GameController::class, 'play'])->middleware('throttle:30,1')->name('games.play');
+    Route::post('/parent/games', [GameController::class, 'save'])->name('games.store');
+    Route::post('/parent/games/{game}', [GameController::class, 'save'])->name('games.update');
     Route::get('/practice/{assignment}', [PracticeController::class, 'show'])->name('practice.show');
     Route::post('/practice/{assignment}', [PracticeController::class, 'act'])->middleware('throttle:180,1')->name('practice.act');
     Route::get('/assignments/{assignment}', [School::class, 'assignment'])->name('assignment');

@@ -147,7 +147,7 @@ class ParentActions
         $student = self::student();
 
         return DB::transaction(function () use ($parent, $student, $from, $to): array {
-            return Assignment::where('student_id', $student->id)->whereDate('date', $from)->orderBy('position')->orderBy('id')->get()->map(function (Assignment $assignment) use ($parent, $to): Assignment {
+            return Assignment::where('is_extra_practice', false)->where('student_id', $student->id)->whereDate('date', $from)->orderBy('position')->orderBy('id')->get()->map(function (Assignment $assignment) use ($parent, $to): Assignment {
                 return self::create($parent, array_replace($assignment->only(self::ASSIGNMENT_FIELDS), ['date' => $to]));
             })->all();
         });
@@ -159,7 +159,7 @@ class ParentActions
         Validator::make(compact('date', 'ids'), ['date' => 'required|date_format:Y-m-d', 'ids' => 'required|array|min:1', 'ids.*' => 'required|integer|distinct'])->validate();
 
         return DB::transaction(function () use ($parent, $date, $ids): array {
-            $assignments = Assignment::where('student_id', self::student()->id)->whereDate('date', $date)->lockForUpdate()->get();
+            $assignments = Assignment::where('is_extra_practice', false)->where('student_id', self::student()->id)->whereDate('date', $date)->lockForUpdate()->get();
             abort_unless($assignments->count() === count($ids) && $assignments->pluck('id')->diff($ids)->isEmpty(), 422, 'Supply every assignment ID for the date exactly once.');
             foreach ($ids as $position => $id) {
                 Assignment::whereKey($id)->update(['position' => $position]);

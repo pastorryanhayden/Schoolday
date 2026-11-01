@@ -61,6 +61,18 @@ async function photoStore(method, value) {
     });
 }
 Alpine.data("shell", (authenticated, latest, routine) => ({
+    gamesOpen: false,
+    gameBusy: false,
+    gamesOpener: null,
+    openGames(button) { this.gamesOpener=button; this.gamesOpen=true; this.$nextTick(() => this.$refs.gamesClose.focus()); },
+    closeGames() { this.gamesOpen=false; this.gamesOpener?.focus(); },
+    trapGames(event) {
+        if (!this.gamesOpen) return;
+        const controls=[...this.$refs.gamesPanel.querySelectorAll('button:not([disabled]),a[href]')].filter(el=>el.offsetParent!==null);
+        const first=controls[0],last=controls[controls.length-1];
+        if (event.shiftKey && document.activeElement===first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement===last) { event.preventDefault(); first.focus(); }
+    },
     routineStale: false,
     routineKind: routine?.current?.kind ?? null,
     dayRunning: Boolean(routine?.day),
@@ -88,6 +100,7 @@ Alpine.data("shell", (authenticated, latest, routine) => ({
     tabletStatus: "Checking…",
     lastContact: "Checking device contact…",
     async init() {
+        window.addEventListener('game-request', event => { this.gameBusy=event.detail.busy; });
         window.addEventListener('routine-sync', (event) => {
             if (!routine || event.detail.version >= routine.version) {
                 routine = event.detail;
@@ -386,6 +399,7 @@ Alpine.data('bookPicker', (books, initialType = 'assignment') => ({
 Alpine.data('practiceGame', (config) => ({
     version: config.version,
     summary: config.summary,
+    extra: Boolean(config.extra),
     approved: config.status === 'approved',
     mode: config.complete ? 'complete' : 'ready',
     question: null,
@@ -406,6 +420,7 @@ Alpine.data('practiceGame', (config) => ({
             if (document.hidden) this.interrupted();
         });
         window.addEventListener('blur', () => this.interrupted());
+        this.$watch('gamesOpen', (open) => { if (open) this.interrupted(); });
     },
     append(digit) {
         this.answer = (this.answer + digit).slice(0, 3);
@@ -419,6 +434,7 @@ Alpine.data('practiceGame', (config) => ({
     async request(action, extra = {}) {
         if (this.busy) return;
         this.busy = true;
+        this.$dispatch('game-request', {busy:true});
         this.error = '';
         clearTimeout(this.timeout);
         try {
@@ -457,6 +473,7 @@ Alpine.data('practiceGame', (config) => ({
             this.mode = action === 'answer' ? 'unsaved' : 'paused';
         } finally {
             this.busy = false;
+            this.$dispatch('game-request', {busy:false});
             if (this.pauseRequested || (document.hidden && ['question','feedback'].includes(this.mode))) {
                 this.pauseRequested = false;
                 if (['question','feedback'].includes(this.mode)) await this.pause('Paused while you were away.');

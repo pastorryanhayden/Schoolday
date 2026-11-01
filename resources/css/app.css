@@ -260,3 +260,105 @@ input[type="checkbox"] { accent-color: var(--green); width: 18px; height: 18px; 
 .assignment-started { color: var(--green); font-weight: 500; }
 .assignment-complete { background: var(--sage); border-left: 3px solid var(--green); padding: 14px 16px; margin-bottom: 24px; }
 .finish-assignment { min-height: 50px; font-size: 16px; margin-top: 12px; }
+
+/* A separate play surface for student games. Parent reports keep the planner theme. */
+.game-mode {
+    --paper: #142d30;
+    --ink: #edf6f1;
+    --muted: #b0c5c2;
+    --rule: #3b575a;
+    --wash: #203d40;
+    --green: #b6e58d;
+    background: #102629;
+    color: var(--ink);
+    min-height: 100vh;
+}
+.game-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 18px max(24px, calc((100vw - 1080px) / 2)); background: #142f32; border-bottom: 1px solid #355357; }
+.game-exit, .game-messages { font-size: 14px; color: #c6dad6; display: inline-flex; align-items: center; gap: 7px; min-height: 40px; }
+.game-exit:hover, .game-messages:hover { color: #fff; text-decoration: underline; text-underline-offset: 4px; }
+.game-label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #b6e58d; }
+.game-label span { font-size: 15px; color: #edf6f1; }
+.game-mode .page { max-width: 980px; padding-top: 30px; }
+.game-mode .back-link, .game-mode .page-heading .eyebrow { display: none; }
+.game-mode .page-heading { justify-content: center; text-align: center; margin-bottom: 22px; }
+.game-mode .page-heading h1 { font-size: clamp(22px,3vw,30px); margin: 0; }
+.game-mode .practice-game { max-width: 700px; border: 1px solid #36575b; border-radius: 16px; background: #19363a; padding: 28px; }
+.game-mode .practice-game .eyebrow { color: #c3d4cf; font-size: 12px; letter-spacing: .5px; }
+.game-mode .practice-game h2 { font-size: 26px; font-weight: 600; }
+.game-mode .practice-game p { font-size: 15px; }
+.game-mode .practice-game .small { font-size: 13px; }
+.game-mode .practice-game .progress { height: 7px; border-radius: 8px; background: #304e50; }
+.game-mode .practice-game .progress span { background: #b6e58d; }
+.game-mode .practice-game > .text-center { min-height: 300px; justify-content: center; }
+.game-mode .btn { border-radius: 8px; min-height: 48px; font-size: 16px; }
+.game-mode .btn.primary { background: #b6e58d; border-color: #b6e58d; color: #16332b; }
+.game-mode .btn.primary:hover { background: #c9efa8; }
+.game-mode .btn.secondary { background: #28484b; border-color: #4c6a6c; color: #edf6f1; }
+.game-mode .btn.secondary:hover { background: #35595c; border-color: #86a69f; }
+.game-mode .text-btn { color: #c7eab3; }
+.game-mode .practice-question { max-width: 370px; margin-block: 18px; }
+.game-mode .practice-equation { font-size: clamp(42px,7vw,72px); letter-spacing: -1px; gap: 16px; padding-block: 16px; }
+.game-mode .practice-game input.practice-answer { background: #10282c; border: 2px solid #709b91; color: #fff; border-radius: 10px; font-size: 36px; min-height: 76px; }
+.game-mode input:not([type="checkbox"]):not([type="range"]) { background: #10282c; color: #fff; border-color: #709b91; }
+.game-mode .practice-keypad { gap: 10px; }
+.game-mode .practice-keypad .btn { min-height: 58px; font-size: 24px; font-weight: 500; background: #28484b; }
+.game-mode .practice-keypad .btn:hover { background: #3b6261; }
+.game-mode .practice-game .text-4xl { font-size: 44px; }
+.game-mode .chart-info { color: #f5d598; border-color: #bc9a5c; background: #3c3a2b; }
+.game-mode .chart-info:hover { background: #514831; }
+.game-mode .chart-modal { background: #08191de8; }
+.game-mode .chart-panel { background: #19363a; border: 1px solid #4c6a6c; border-radius: 12px; }
+.game-mode .multiplication-chart { color: #edf6f1; }
+.game-mode .multiplication-chart th { background: #28484b; color: #c7eab3; }
+.game-mode .multiplication-chart tr:hover td { background: #315552; }
+.game-mode .footnote { color: #b0c5c2; }
+.game-mode .practice-game > .footnote { font-size: 12px; border-top: 1px solid #36575b; padding-top: 16px; margin-top: 20px; }
+.game-mode .error-text { color: #ffcc9e; }
+.game-mode .feedback { background: #303c30; border-color: #bfaa65; }
+.game-mode .open-day-alert, .game-mode .live-alert, .game-mode .network-alert { background: #3d3928; color: #ffe1a7; border-color: #665b3c; }
+.game-mode .day-controls { background: #142f32; border-color: #355357; }
+.game-mode .day-controls .btn { background: transparent; border-color: #557273; color: #c6dad6; font-size: 13px; min-height: 44px; }
+.game-mode .day-controls .btn:hover { background: #28484b; }
+.game-mode .nav-count { background: #b6e58d; color: #16332b; }
+.game-mode button:focus-visible, .game-mode a:focus-visible, .game-mode input:focus { outline-color: #f2cf8d; }
+@media(max-width:700px) {
+ .game-header { padding: 12px 16px; gap: 12px; }
+ .game-messages { font-size: 12px; }
+ .game-mode .page { padding: 22px 16px 36px; }
+ .game-mode .practice-game { padding: 20px 16px; border-radius: 12px; }
+ .game-mode .practice-game h2 { font-size: 23px; }
+ .game-mode .practice-game > .text-center { min-height: 240px; }
+ .game-mode .practice-equation { gap: 10px; }
+}
+
+.nav-game-button, button.game-messages { background: none; border: 0; padding: 0; font: inherit; }
+.game-header .game-label { margin-right: auto; }
+.game-library-layout { display: grid; grid-template-columns: minmax(0,1fr) minmax(280px,1fr); gap: 36px; }
+.library-game { background: var(--card, #fffefb); border: 1px solid var(--sage-border); border-radius: 10px; padding: 20px; }
+.library-game h2, .library-game h3 { margin-top: 6px; }
+.library-game-kind { color: #4c7144; font-size: 13px; }
+.games-overlay { position: fixed; inset: 0; background: #112729aa; z-index: 110; }
+.games-drawer { position: absolute; inset: 0 0 0 auto; width: min(440px,100%); background: #fcfaf4; color: #2e322c; padding: 24px; overflow-y: auto; overscroll-behavior: contain; }
+.games-drawer .muted { color: #62665d; }
+.game-mode .games-drawer { background: #142f32; color: #edf6f1; }
+.game-mode .games-drawer .library-game { background: #203d40; border-color: #4c6a6c; }
+.game-mode .games-drawer .muted { color: #b0c5c2; }
+.game-mode .games-drawer .library-game-kind { color: #b6e58d; }
+.game-mode .game-header { gap: 24px; }
+@media(max-width:700px) {
+ .game-library-layout { grid-template-columns: 1fr; }
+ .game-mode .game-header { gap: 14px; flex-wrap: wrap; }
+ .games-drawer { padding: 20px 16px; }
+}
+
+.student-library { grid-template-columns: 1fr; }
+.student-library > .stack { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(260px,100%),1fr)); align-items: start; }
+@media(min-width:760px) {
+ .game-mode .practice-question { display: grid; grid-template-columns: minmax(0,1fr) 270px; grid-template-rows: 50px 1fr; max-width: none; column-gap: 28px; row-gap: 10px; }
+ .game-mode .practice-question > div:first-child { grid-column: 1; grid-row: 1; }
+ .game-mode .practice-question > .practice-equation { grid-column: 1; grid-row: 2; align-self: center; flex-wrap: wrap; font-size: 52px; gap: 10px; }
+ .game-mode .practice-question > form { grid-column: 2; grid-row: 1 / span 2; gap: 10px; }
+ .game-mode .practice-game input.practice-answer { min-height: 58px; font-size: 30px; }
+ .game-mode .practice-keypad .btn { min-height: 44px; font-size: 20px; }
+ .game-mode .practice-question > button { grid-column: 1 / -1; }
+}
