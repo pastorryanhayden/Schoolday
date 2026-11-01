@@ -8,7 +8,7 @@
 <section class="panel routine-card mb-6">
     <div class="flex-between gap-4 flex-wrap">
         <div>
-            <div class="eyebrow">{{ $parent ? 'NOAH’S CURRENT ACTIVITY · SHARED ACROSS DEVICES' : 'YOUR SCHOOL DAY · LAPTOP + TABLET' }}</div>
+            <div class="eyebrow">Right now</div>
             <h2 x-text="routineLabel">{{ $open ? ($current['label'] ?? 'Choosing the next activity') : 'Schoolday is not running' }}</h2>
             @if($open)
                 <p class="muted small">Day started {{ $time($open['started_at']) }}.@if($current) This period started {{ $time($current['started_at']) }}.@endif</p>
@@ -35,5 +35,5 @@
             </div>
         @endunless
     </div>
-    <p class="footnote">Reported time only. Breaks and choosing time are separate from work. Ordinary work periods stay open until stopped or corrected. Games count recorded practice.</p>
+    <details class="time-explanation"><summary>About recorded time</summary><p class="footnote">Reported time only. Breaks and choosing time are separate from work. Ordinary work periods stay open until stopped or corrected. Games count recorded practice.</p></details>
 </section>

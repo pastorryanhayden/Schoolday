@@ -3,7 +3,7 @@
 @section('content')
 @php($parent = auth()->user()->role === 'parent')
 <a href="{{ route('home', ['date' => $a->date->toDateString()]) }}" class="back-link">← Back to the schoolday</a>
-<div class="page-heading"><div><div class="eyebrow">WORD WORK · {{ $a->date->format('M j') }}</div><h1>{{ $a->title }}</h1><p class="muted">Look closely. Listen carefully. Make it stick.</p></div>@if($parent)<x-status :status="$a->status"/>@endif</div>
+<div class="page-heading"><div><div class="eyebrow">Spelling · {{ $a->date->format('M j') }}</div><h1>{{ $a->title }}</h1></div>@if($parent)<x-status :status="$a->status"/>@endif</div>
 <x-routine-card :routine="$routine" :parent="$parent"/>
 @if($a->feedback)<section class="feedback panel mb-6"><h2>Feedback from Dad</h2><p>{{ $a->feedback }}</p></section>@endif
 @if(!$parent)
@@ -12,7 +12,7 @@
     <p class="muted mt-3">{{ $a->instructions }}</p>
     <div class="progress my-5" role="progressbar" aria-label="Practice progress" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="Math.min(100,Math.round(100*(summary.question_target ? summary.round.attempts/summary.question_target : summary.round.practice_ms/summary.target_ms)))"><span :style="'width:'+Math.min(100,100*(summary.question_target ? summary.round.attempts/summary.question_target : summary.round.practice_ms/summary.target_ms))+'%'"></span></div>
     <div x-show="mode==='ready' || mode==='paused'" class="stack text-center py-6">
-        <h2 x-text="mode==='ready'?'Three little ways to learn your words.':'Practice is paused.'"></h2>
+        <h2 x-text="mode==='ready'?'Spelling practice':'Practice is paused.'"></h2>
         <div class="grid gap-4 sm:grid-cols-3 text-left"><div><strong>01 · Look & spell</strong><p class="small muted">Study the word. Cover it. Spell it from memory.</p></div><div><strong>02 · Listen & spell</strong><p class="small muted">Hear the word, then type its spelling.</p></div><div><strong>03 · Choose the spelling</strong><p class="small muted">Hear the word. Pick its correct spelling.</p></div></div>
         <p class="muted">{{ $a->question_target ? $a->question_target.' questions' : $a->minutes.' minutes of recorded practice' }}. No countdown. Take your time.</p>
         @if($routine['open_day'])<button class="btn primary mx-auto" :disabled="busy || routineStale" @click="start()" x-text="mode==='ready'?'Start practice':'Resume practice'"></button>@else<a class="btn primary mx-auto" href="{{ route('home') }}">Start my day first →</a>@endif

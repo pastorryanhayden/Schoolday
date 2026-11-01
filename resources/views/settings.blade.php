@@ -5,14 +5,14 @@
 <div class="page-heading">
     <div>
         <div class="eyebrow">PARENT SETTINGS</div>
-        <h1>The books behind the schoolday.</h1>
+        <h1>Books & courses</h1>
         <p class="muted">Set up Noah’s books once. Choose a book when you plan an assignment.</p>
     </div>
     <span class="status status-approved">{{ $books->where('active', true)->count() }} active books</span>
 </div>
 <div class="grid gap-6 xl:grid-cols-2">
     <section class="stack">
-        <div class="section-heading"><h2>Your book shelf</h2><span class="small muted">{{ $books->count() }} total</span></div>
+        <div class="section-heading"><h2>Books</h2><span class="small muted">{{ $books->count() }} total</span></div>
         @forelse($books as $book)
             <details class="panel" @if(old('book_id') == $book->id) open @endif>
                 <summary class="flex-between">
@@ -28,7 +28,7 @@
                 </form>
             </details>
         @empty
-            <div class="panel empty"><x-icon name="book" size="35"/><h2>A shelf ready to fill.</h2><p>Add the books Noah uses for math, writing, literature, handwriting, and spelling.</p></div>
+            <div class="panel empty"><x-icon name="book" size="35"/><h2>No books yet.</h2><p>Add the books Noah uses for math, writing, literature, handwriting, and spelling.</p></div>
         @endforelse
         <p class="footnote">Book defaults are copied when you select a book for a new assignment. Editing a book does not rewrite instructions on existing assignments. Lesson references advance only when you edit them; there are no curriculum integrations.</p>
     </section>

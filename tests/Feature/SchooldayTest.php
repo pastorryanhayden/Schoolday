@@ -52,9 +52,9 @@ class SchooldayTest extends TestCase
     public function test_both_dashboards_and_assignment_pages_render(): void
     {
         $a = $this->work();
-        $this->actingAs($this->dad)->get('/')->assertOk()->assertSee('A window into Noah');
+        $this->actingAs($this->dad)->get('/')->assertOk()->assertSee('Today’s plan');
         $this->get('/assignments/'.$a->id)->assertOk();
-        $this->actingAs($this->noah)->get('/')->assertOk()->assertDontSee('Build a schoolday')->assertDontSee('Add assignment');
+        $this->actingAs($this->noah)->get('/')->assertOk()->assertDontSee('Assignment details')->assertDontSee('Add assignment');
         $this->get('/assignments/'.$a->id)->assertOk()->assertSee('Submit to Dad');
     }
 

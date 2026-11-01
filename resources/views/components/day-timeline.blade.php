@@ -10,14 +10,14 @@
     <p class="muted">Reported sessions, across both devices. Ordinary work periods count until stopped; games count recorded practice. Refresh to update totals.</p>
     <div class="grid gap-3 sm:grid-cols-3 my-5">
         @foreach(['work' => 'Reported work', 'break' => 'Breaks', 'idle' => 'Choosing / between activities'] as $kind => $label)
-            <div class="rounded-xl bg-stone-50 p-4"><strong>{{ round($routine['totals_seconds'][$kind] / 60, 1) }} min</strong><div class="small muted">{{ $label }}</div></div>
+            <div class="py-3"><strong>{{ round($routine['totals_seconds'][$kind] / 60, 1) }} min</strong><div class="small muted">{{ $label }}</div></div>
         @endforeach
     </div>
     @if($day)
         <p class="small"><strong>Day started</strong> {{ $time($day['started_at']) }} @if($day['finished_at']) · <strong>Day finished</strong> {{ $time($day['finished_at']) }} @else · Still open @endif</p>
         <div class="stack mt-5">
             @foreach($day['sessions'] as $period)
-                <article class="rounded-xl border border-stone-200 p-4">
+                <article class="timeline-period">
                     <div class="flex-between gap-3 flex-wrap"><strong>{{ $period['label'] }}</strong><span class="status {{ $period['ended_at'] ? 'status-approved' : 'status-in_progress' }}">{{ $period['ended_at'] ? 'Recorded' : 'Open period' }}</span></div>
                     <p class="small muted">{{ $time($period['started_at']) }} → {{ $period['ended_at'] ? $time($period['ended_at']) : 'until stopped' }}</p>
                     @if($period['kind'] === 'work' && $period['practice_ms'] !== null)<p class="small muted">Recorded game practice: {{ round($period['practice_ms'] / 60000, 1) }} min. Open-page time is excluded.</p>@endif

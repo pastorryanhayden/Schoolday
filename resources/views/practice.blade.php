@@ -3,7 +3,7 @@
 @section('content')
 @php($parent = auth()->user()->role === 'parent')
 <a href="/?date={{ $a->date->toDateString() }}" class="back-link">← Back to the schoolday</a>
-<div class="page-heading"><div><div class="eyebrow">MATH FACT FLUENCY · {{ $a->date->format('M j') }}</div><h1>{{ $a->title }}</h1><p class="muted">A little practice. A quicker recall.</p></div>@if($parent)<x-status :status="$a->status"/>@endif</div>
+<div class="page-heading"><div><div class="eyebrow">Math · {{ $a->date->format('M j') }}</div><h1>{{ $a->title }}</h1></div>@if($parent)<x-status :status="$a->status"/>@endif</div>
 <x-routine-card :routine="$routine" :parent="$parent"/>
 @if($a->feedback)<section class="feedback panel mb-6"><h2>Feedback from Dad</h2><p>{{ $a->feedback }}</p></section>@endif
 @if(!$parent)
@@ -12,7 +12,7 @@
     <p class="muted mt-3">{{ $a->instructions }}</p>
     <div class="progress my-5" role="progressbar" aria-label="Practice progress" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="Math.min(100,Math.round(100*(summary.question_target ? summary.round.attempts/summary.question_target : summary.round.practice_ms/summary.target_ms)))"><span :style="'width:'+Math.min(100,100*(summary.question_target ? summary.round.attempts/summary.question_target : summary.round.practice_ms/summary.target_ms))+'%'"></span></div>
     <div x-show="mode==='ready' || mode==='paused'" class="stack text-center py-6">
-        <h2 x-text="mode==='ready'?'Ready for a short round?':'Practice is paused.'"></h2>
+        <h2 x-text="mode==='ready'?'Ready to practice?':'Practice is paused.'"></h2>
         <p class="muted">Aim for accurate answers. There’s no countdown. Slower facts will come back for more practice.</p>
         <p class="small muted">@if($a->question_target){{ $a->question_target }} questions. Take your time; each saved answer counts toward the target.@else{{ $a->minutes }} {{ Str::plural('minute', $a->minutes) }} of recorded practice. Breaks and time away don’t fill the target.@endif</p>
         @if($routine['open_day'])<button class="btn primary mx-auto" :disabled="busy || routineStale" @click="start()" x-text="mode==='ready'?'Start practice':'Resume practice'"></button>@else<a class="btn primary mx-auto" href="{{ route('home') }}">Start my day first →</a>@endif
@@ -31,7 +31,7 @@
         <h2 x-text="feedback?.correct?'That’s right!':'Let’s keep practicing this one.'"></h2>
         <p class="practice-equation" x-text="feedback ? feedback.left+' × '+feedback.right+' = '+feedback.answer : ''"></p>
         <p class="small muted" x-show="feedback?.assisted">Chart used · we’ll practice this fact again.</p>
-        <p class="muted" x-text="feedback?.correct?'One more step toward quick recall.':'You’ll see this fact again in a later round.'"></p>
+        <p class="muted" x-text="feedback?.correct?'Correct. Continue when ready.':'You’ll see this fact again in a later round.'"></p>
         <button class="btn primary mx-auto" :disabled="busy || routineStale" @click="next()">Next fact →</button>
     </div>
     <div x-show="mode==='complete'" class="stack text-center py-6" role="status">
