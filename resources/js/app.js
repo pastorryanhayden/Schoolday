@@ -62,6 +62,8 @@ async function photoStore(method, value) {
 }
 Alpine.data("shell", (authenticated, latest, routine) => ({
     routineStale: false,
+    routineKind: routine?.current?.kind ?? null,
+    dayRunning: Boolean(routine?.day),
     routineVersion: routine?.version ?? 0,
     routineLabel: routine?.label ?? "Schoolday is not running",
     online: navigator.onLine,
@@ -92,6 +94,8 @@ Alpine.data("shell", (authenticated, latest, routine) => ({
                 this.routineStale = false;
                 this.routineVersion = routine.version;
                 this.routineLabel = routine.label;
+                this.routineKind = routine.current?.kind ?? null;
+                this.dayRunning = Boolean(routine.day);
             }
         });
         window.addEventListener("online", () => {
