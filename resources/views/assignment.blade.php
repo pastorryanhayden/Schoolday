@@ -5,7 +5,6 @@
 @php($editable=in_array($a->status,['not_started','in_progress','needs_changes']))
 <a href="/?date={{ $a->date->toDateString() }}" class="back-link">← Back to the schoolday</a>
 <div class="page-heading"><div><div class="eyebrow">{{ $a->subject }} · {{ $a->date->format('l, M j') }}</div><h1>{{ $a->title }}</h1><p class="muted">{{ $a->reference }}</p></div><x-status :status="$a->status"/></div>
-<x-routine-card :routine="$routine" :parent="$parent"/>
 <div class="work-grid"><div class="stack"><section class="panel instructions"><div class="section-heading"><h2>The assignment</h2><x-icon name="book"/></div><p class="preserve">{{ $a->instructions }}</p>@if($a->book)<p class="muted small">Book: <strong>{{ $a->book->title }}</strong>{{ $a->book->level ? ' · '.$a->book->level : '' }}{{ $a->book->publisher ? ' · '.$a->book->publisher : '' }}</p>@endif<div class="instruction-meta">@if($a->minutes)<span class="flex"><x-icon name="clock" size="17"/> {{ $a->minutes }} min estimate</span>@endif<span class="flex"><x-icon name="camera" size="17"/> {{ $a->requires_photo?'Worksheet photos required':'Photos optional' }}</span></div>@if(!$parent && $editable)
 @if($routine['open_day'])
 <form action="/assignments/{{ $a->id }}/start" method="post">@csrf<input type="hidden" name="version" value="{{ $routine['version'] }}"><button class="btn primary" :disabled="routineStale">{{ $a->started_at?'Work on this assignment':'Start assignment' }} <x-icon name="arrow" size="16"/></button></form>

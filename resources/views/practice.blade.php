@@ -4,7 +4,6 @@
 @php($parent = auth()->user()->role === 'parent')
 <a href="/?date={{ $a->date->toDateString() }}" class="back-link">← Back to the schoolday</a>
 <div class="page-heading"><div><div class="eyebrow">Math · {{ $a->date->format('M j') }}</div><h1>{{ $a->title }}</h1></div>@if($parent)<x-status :status="$a->status"/>@endif</div>
-<x-routine-card :routine="$routine" :parent="$parent"/>
 @if($a->feedback)<section class="feedback panel mb-6"><h2>Feedback from Dad</h2><p>{{ $a->feedback }}</p></section>@endif
 @if(!$parent)
 <section class="panel practice-game" @keydown.enter.window="if(mode==='feedback' &amp;&amp; !busy &amp;&amp; !routineStale){$event.preventDefault();next()}" x-data="practiceGame(@js(['url' => route('practice.act', $a), 'version' => $routine['version'], 'summary' => $summary, 'status' => $a->status, 'complete' => in_array($a->status, ['submitted', 'approved'])]))">
