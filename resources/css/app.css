@@ -80,7 +80,9 @@ small, .small { font-size: 12px; }
 .plan-now .routine-card h2 { font-size: 16px; }
 .plan-now .routine-card .btn { font-size: 13px; }
 .plan-now .routine-card p { line-height: 1.6; }
-.message-excerpt { white-space: pre-wrap; overflow-wrap: anywhere; }
+.message-preview { background: var(--sage); border: 1px solid var(--sage-border); border-radius: 12px 12px 12px 3px; padding: 13px 15px; margin: 12px 0; }
+.message-excerpt { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 8px; color: #294c36; }
+.message-preview time { display: block; color: #52664d; font-size: 12px; }
 .assignment-list { counter-reset: assignment; display: flex; flex-direction: column; gap: 12px; margin-top: 18px; }
 .assignment-row { counter-increment: assignment; display: flex; align-items: flex-start; gap: 12px; padding: 18px; border: 1px solid #d8dccf; border-left: 4px solid var(--sage-border); border-radius: 7px; background: var(--card); box-shadow: 0 1px 2px #2e322c08; }
 .assignment-row:hover { border-color: #b9c6af; }
