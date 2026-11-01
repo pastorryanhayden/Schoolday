@@ -301,6 +301,30 @@ class DailyRoutineTest extends TestCase
         }
     }
 
+    public function test_start_opens_the_work_section_and_finish_closes_the_session_for_parent_review(): void
+    {
+        [$parent, $student] = $this->family();
+        $assignment = $this->assignment($student, ['note' => 'Existing draft.']);
+        $url = '/assignments/'.$assignment->id;
+        $this->action($student, 'day-start');
+        $this->get($url)->assertOk()->assertSee('Start assignment')->assertDontSee('id="your-work"', false);
+
+        $this->post($url.'/start', ['version' => $student->fresh()->routine_version])->assertRedirect($url.'#your-work');
+        $this->get($url)->assertOk()->assertSee('id="your-work"', false)->assertSee('Finish assignment')->assertSee('Existing draft.');
+        $period = WorkSession::where('assignment_id', $assignment->id)->firstOrFail();
+        $this->travel(5)->minutes();
+        $this->post($url.'/submit', ['note' => 'Score: 90%.'])->assertRedirect($url);
+
+        $this->assertNotNull($period->fresh()->ended_at);
+        $this->assertSame(300, $period->fresh()->seconds());
+        $this->assertSame('idle', DailyRoutine::state($student)['current']['kind']);
+        $this->assertSame('submitted', $assignment->fresh()->status);
+        $this->assertNull($assignment->fresh()->approved_at);
+        $this->assertSame('Score: 90%.', $assignment->fresh()->note);
+        $this->get($url)->assertOk()->assertSee('Your work is waiting for Dad')->assertDontSee('finish-assignment', false);
+        $this->actingAs($parent)->get($url)->assertOk()->assertSee('Submitted work')->assertSee('Score: 90%.');
+    }
+
     public function test_old_records_are_not_backfilled_and_a_day_left_open_requires_explicit_finish(): void
     {
         [, $student] = $this->family();

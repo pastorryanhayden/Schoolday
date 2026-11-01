@@ -55,7 +55,7 @@ class SchooldayTest extends TestCase
         $this->actingAs($this->dad)->get('/')->assertOk()->assertSee('Today’s plan');
         $this->get('/assignments/'.$a->id)->assertOk();
         $this->actingAs($this->noah)->get('/')->assertOk()->assertDontSee('Assignment details')->assertDontSee('Add assignment');
-        $this->get('/assignments/'.$a->id)->assertOk()->assertSee('Submit to Dad');
+        $this->get('/assignments/'.$a->id)->assertOk()->assertDontSee('Finish assignment')->assertSee('Start your schoolday');
     }
 
     public function test_student_cannot_access_any_parent_mutation_or_review(): void

@@ -255,3 +255,8 @@ input[type="checkbox"] { accent-color: var(--green); width: 18px; height: 18px; 
  .student-account .app-main { padding-bottom: 200px; }
  .open-day-alert { padding: 12px 20px; }
 }
+
+#your-work { scroll-margin-top: 20px; }
+.assignment-started { color: var(--green); font-weight: 500; }
+.assignment-complete { background: var(--sage); border-left: 3px solid var(--green); padding: 14px 16px; margin-bottom: 24px; }
+.finish-assignment { min-height: 50px; font-size: 16px; margin-top: 12px; }

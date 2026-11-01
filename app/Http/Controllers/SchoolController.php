@@ -102,7 +102,7 @@ class SchoolController extends Controller
         $data = $r->validate(['version' => 'required|integer|min:0']);
         DailyRoutine::transition($r->user(), 'activity-start', (int) $data['version'], $assignment->id);
 
-        return $assignment->isPractice() ? redirect()->route('practice.show', $assignment) : back();
+        return $assignment->isPractice() ? redirect()->route('practice.show', $assignment) : redirect()->to(route('assignment', $assignment).'#your-work');
     }
 
     public function draft(Request $r, Assignment $assignment)
@@ -186,7 +186,7 @@ class SchoolController extends Controller
             School::record($r->user(), $kind, ucfirst($kind).': '.$a->title.' (revision '.$a->revision.')'.($a->note ? ' — '.$a->note : ''), $a);
         });
 
-        return redirect()->route('assignment', $assignment)->with('success', 'Work submitted. Dad will review it next.');
+        return redirect()->route('assignment', $assignment)->with('success', 'Assignment finished. Dad will review your work next.');
     }
 
     public function review(Request $r, Assignment $assignment)
