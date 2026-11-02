@@ -415,6 +415,8 @@ Alpine.data('practiceGame', (config) => ({
     timeout: null,
     pending: null,
     pauseRequested: false,
+    exitOpen: false,
+    resumeAfterExit: false,
     init() {
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) this.interrupted();
@@ -424,6 +426,21 @@ Alpine.data('practiceGame', (config) => ({
     },
     append(digit) {
         this.answer = (this.answer + digit).slice(0, 3);
+    },
+    async askToExit() {
+        if (this.busy) return;
+        this.resumeAfterExit = ['question', 'feedback'].includes(this.mode);
+        this.exitOpen = true;
+        this.stopSpeech();
+        if (this.resumeAfterExit) await this.pause();
+        this.$nextTick(() => this.$refs.keepPlaying.focus());
+    },
+    async keepPlaying() {
+        if (this.busy) return;
+        this.exitOpen = false;
+        if (this.resumeAfterExit && !this.error && !this.routineStale) await this.start();
+        else this.$nextTick(() => this.$refs.exitOpener.focus());
+        this.resumeAfterExit = false;
     },
     interrupted() {
         if (!['question', 'feedback'].includes(this.mode)) return;

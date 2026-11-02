@@ -2,6 +2,7 @@
 <svg width="{{ $size }}" height="{{ $size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 @switch($name)
 @case('home') <path d="m3 10 9-7 9 7v10H3Z"/><path d="M9 20v-7h6v7"/> @break
+@case('play') <rect x="3" y="3" width="18" height="18" rx="6"/><path d="m10 8 6 4-6 4Z"/> @break
 @case('book') <path d="M12 5v16M3 3c4 0 6 0 9 2 3-2 5-2 9-2v15c-4 0-6 0-9 2-3-2-5-2-9-2Z"/> @break
 @case('message') <path d="M21 11a8 8 0 0 1-8 8H8l-5 3V11a9 9 0 0 1 18 0Z"/><path d="M8 10h8M8 14h5"/> @break
 @case('check') <path d="m5 12 4 4L19 6"/> @break

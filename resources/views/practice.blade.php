@@ -7,36 +7,37 @@
 <div class="page-heading"><div><div class="eyebrow">Math · {{ $a->date->format('M j') }}</div><h1>{{ $a->title }}</h1></div>@if($parent)<x-status :status="$a->status"/>@endif</div>
 @if($a->feedback)<section class="feedback panel mb-6"><h2>Feedback from Dad</h2><p>{{ $a->feedback }}</p></section>@endif
 @if(!$parent)
-<section class="panel practice-game" @keydown.enter.window="if(mode==='feedback' &amp;&amp; !busy &amp;&amp; !routineStale){$event.preventDefault();next()}" x-data="practiceGame(@js(['url' => route('practice.act', $a), 'version' => $routine['version'], 'summary' => $summary, 'status' => $a->status, 'extra' => $a->is_extra_practice, 'complete' => in_array($a->status, ['submitted', 'approved'])]))">
+<section class="panel practice-game" aria-label="Game mode" @keydown.enter.window="if(mode==='feedback' &amp;&amp; !busy &amp;&amp; !routineStale){$event.preventDefault();next()}" x-data="practiceGame(@js(['url' => route('practice.act', $a), 'version' => $routine['version'], 'summary' => $summary, 'status' => $a->status, 'extra' => $a->is_extra_practice, 'complete' => in_array($a->status, ['submitted', 'approved'])]))">
+    <x-game-exit/>
     <div class="flex-between gap-3 flex-wrap"><span class="eyebrow">{{ $a->fact_min }}–{{ $a->fact_max }} TIMES TABLES</span><span class="small muted" x-text="summary.round.correct+' / '+summary.round.attempts+' correct'"></span></div>
-    <p class="muted mt-3" x-show="mode==='ready' || mode==='paused'">{{ $a->instructions }}</p>
+    <p class="muted mt-3 practice-instructions" x-show="mode==='ready' || mode==='paused'">{{ $a->instructions }}</p>
     <div class="progress my-5" role="progressbar" aria-label="Practice progress" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="Math.min(100,Math.round(100*(summary.question_target ? summary.round.attempts/summary.question_target : summary.round.practice_ms/summary.target_ms)))"><span :style="'width:'+Math.min(100,100*(summary.question_target ? summary.round.attempts/summary.question_target : summary.round.practice_ms/summary.target_ms))+'%'"></span></div>
     <div x-show="mode==='ready' || mode==='paused'" class="stack text-center py-6">
-        <h2 x-text="mode==='ready'?'Ready to practice?':'Practice is paused.'"></h2>
-        <p class="muted">Aim for accurate answers. There’s no countdown. Slower facts will come back for more practice.</p>
+        <x-spark class="practice-ready-spark"/><h2 x-text="mode==='ready'?'Let’s play with numbers!':'Ready when you are.'"></h2>
+        <p class="muted">One fact at a time. Take your time. You’ve got this.</p>
         <p class="small muted">@if($a->question_target){{ $a->question_target }} questions. Take your time; each saved answer counts toward the target.@else{{ $a->minutes }} {{ Str::plural('minute', $a->minutes) }} of recorded practice. Breaks and time away don’t fill the target.@endif</p>
         @if($routine['open_day'])<button class="btn primary mx-auto" :disabled="busy || routineStale" @click="start()" x-text="mode==='ready'?'Start practice':'Resume practice'"></button>@else<a class="btn primary mx-auto" href="{{ route('home') }}">Start my day first →</a>@endif
     </div>
+    <h2 class="question-prompt" x-show="mode==='question' || mode==='unsaved'" x-cloak>What’s the missing number?</h2>
     <div x-show="mode==='question' || mode==='unsaved'" x-cloak class="practice-question stack">
-        <div class="flex justify-center"><button type="button" class="chart-info" aria-label="Open 12 by 12 multiplication chart" title="Multiplication chart" :disabled="busy || mode!=='question' || routineStale" @click="help()">i</button></div>
-        <div class="practice-equation" aria-live="polite"><span x-text="question?.left"></span><span aria-label="times">×</span><span x-text="question?.right"></span><span>=</span><span>?</span></div>
+        <div class="practice-tool"><button type="button" class="chart-info" aria-label="Open 12 by 12 multiplication chart" title="Multiplication chart" :disabled="busy || mode!=='question' || routineStale" @click="help()"><x-icon name="help"/> <span>Number chart</span></button></div>
+        <div class="practice-equation" aria-live="polite"><span x-text="question?.left"></span><span aria-label="times">×</span><span x-text="question?.right"></span><span>=</span><span class="equation-blank" x-text="answer || '?'"></span></div>
         <form @submit.prevent="answerQuestion()" class="stack">
             <label class="sr-only" for="fact-answer">Your answer</label><input id="fact-answer" class="practice-answer" type="text" inputmode="none" autocomplete="off" maxlength="3" pattern="[0-9]*" x-model="answer" x-ref="answer" :disabled="busy || mode==='unsaved' || routineStale" @input="answer=answer.replace(/[^0-9]/g,'').slice(0,3)">
             <div class="practice-keypad"><template x-for="digit in [1,2,3,4,5,6,7,8,9]"><button type="button" class="btn secondary" :disabled="busy || mode==='unsaved' || routineStale" @click="append(digit)" x-text="digit"></button></template><button type="button" class="btn secondary" :disabled="busy || mode==='unsaved' || routineStale" @click="answer=''">Clear</button><button type="button" class="btn secondary" :disabled="busy || mode==='unsaved' || routineStale" @click="append(0)">0</button><button type="button" class="btn secondary" :disabled="busy || mode==='unsaved' || routineStale" @click="answer=answer.slice(0,-1)" aria-label="Delete last digit">⌫</button></div>
-            <button class="btn primary" :disabled="busy || answer==='' || mode==='unsaved' || routineStale">Check answer →</button>
+            <button class="btn primary check-answer" :disabled="busy || answer==='' || mode==='unsaved' || routineStale" x-text="busy ? 'Saving…' : 'Check answer'">Check answer</button>
         </form>
         <button class="btn secondary" x-show="mode==='unsaved'" :disabled="busy" @click="retry()">Retry saving this answer</button>
     </div>
-    <div x-show="mode==='feedback'" x-cloak class="stack text-center py-6" role="status">
+    <div x-show="mode==='feedback'" x-cloak class="practice-feedback stack text-center py-6" :class="feedback?.correct ? 'answer-correct' : 'answer-revisit'" role="status">
+        <span class="feedback-symbol" aria-hidden="true" x-text="feedback?.correct ? '✓' : '↻'"></span>
         <h2 x-text="feedback?.correct?'That’s right!':'Let’s keep practicing this one.'"></h2>
         <p class="practice-equation" x-text="feedback ? feedback.left+' × '+feedback.right+' = '+feedback.answer : ''"></p>
         <p class="small muted" x-show="feedback?.assisted">Chart used · we’ll practice this fact again.</p>
-        <p class="muted" x-text="feedback?.correct?'Correct. Continue when ready.':'You’ll see this fact again in a later round.'"></p>
-        <button class="btn primary mx-auto" :disabled="busy || routineStale" @click="next()">Next fact →</button>
+        <p class="muted" x-text="feedback?.correct?'You’ve got it. Keep going!':'That’s okay. This fact will get another turn.'"></p>
+        <button class="btn primary mx-auto" :disabled="busy || routineStale" @click="next()">Continue →</button>
     </div>
-    <div x-show="mode==='complete'" class="stack text-center py-6" role="status">
-        <h2>Practice complete. Nice work!</h2><p class="muted" x-text="extra?'Extra practice saved. Play another round whenever you like.':(approved?'Dad approved this practice.':'Your results are saved for Dad’s review.')">Your results are saved for Dad’s review.</p><p><strong x-text="summary.round.correct+' of '+summary.round.attempts+' correct'"></strong></p><button type="button" class="btn primary mx-auto" @click="openGames($el)" x-show="extra">Play another round →</button><a class="btn secondary mx-auto" href="{{ route('home') }}">Back to my schoolday →</a>
-    </div>
+    <x-practice-finish/>
     <p class="error-text mt-4" x-show="error" x-text="error" role="alert"></p>
     <button class="text-btn mt-5" x-show="mode==='question' || mode==='feedback' || mode==='unsaved'" :disabled="busy || routineStale" @click="pause()">Pause practice</button>
     <p class="footnote" x-show="mode==='ready' || mode==='paused'">Use the keypad or type on your laptop. Enter checks an answer and moves to the next fact. Leaving this page or a long gap pauses the question. Saved answers and brief feedback time count toward practice; idle time does not.</p>

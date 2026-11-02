@@ -14,12 +14,17 @@
  <aside class="plan-date" aria-label="{{ \Carbon\Carbon::parse($date)->format('l, F j, Y') }}"><span>{{ \Carbon\Carbon::parse($date)->format('l') }}</span><strong>{{ \Carbon\Carbon::parse($date)->format('j') }}</strong><span>{{ \Carbon\Carbon::parse($date)->format('F') }}</span></aside>
  <div class="plan-work">
   @if($parent)<p class="activity-summary"><strong>Current activity:</strong> <span x-text="routineLabel">{{ $routine['open_day'] ? ($routine['current']['label'] ?? 'Choosing the next activity') : 'Schoolday is not running' }}</span></p>@endif
-  <div class="page-heading"><div><h1>Today’s plan</h1><p class="muted small">{{ $approved }} of {{ $assignments->count() }} approved · {{ $submitted }} awaiting review</p></div>@if($parent)<button class="btn primary" @click="tab='planner';location.hash='planner'">Add assignment</button>@endif</div>
+  <div class="plan-welcome">
+   <div><span class="eyebrow">ONE STEP AT A TIME</span><h1>{{ $parent ? 'Let’s make a great schoolday.' : 'Ready, Noah? Let’s go!' }}</h1><p>{{ $parent ? 'A little progress. A lot to be proud of.' : 'Pick an activity and give it your best.' }}</p></div>
+   <x-spark/>
+  </div>
+  <div class="page-heading"><div><h2>Today’s plan</h2><p class="muted small">{{ $approved }} of {{ $assignments->count() }} approved · {{ $submitted }} awaiting review</p></div>@if($parent)<button class="btn primary" @click="tab='planner';location.hash='planner'">Add assignment</button>@endif</div>
+  @if($assignments->count())<div class="daily-progress" role="progressbar" aria-label="Assignments approved" aria-valuemin="0" aria-valuemax="{{ $assignments->count() }}" aria-valuenow="{{ $approved }}"><span style="width: {{ $percent }}%"></span></div>@endif
   @if($unread || $changes)<div class="attention">@if($unread)<button class="text-btn" @click="tab='messages';location.hash='messages';markRead()">{{ $unread }} unread {{ Str::plural('message',$unread) }}</button>@endif @if($changes)<span>{{ $changes }} {{ Str::plural('assignment',$changes) }} {{ $changes===1?'needs':'need' }} corrections</span>@endif</div>@endif
   <p class="muted small">Suggested order. {{ $parent ? 'Use the arrows to reorder.' : 'You can change the order. Start each activity so Dad knows what you’re doing.' }}</p>
   <div class="assignment-list" x-data="ordering(@js($assignments->pluck('id')->values()))">
    @forelse($assignments as $a)
-   <article class="assignment-row assignment-state-{{ $a->status }}" data-assignment="{{ $a->id }}">
+   <article class="assignment-row assignment-state-{{ $a->status }}" data-assignment="{{ $a->id }}" data-subject="{{ $a->subject }}">
     <span class="assignment-number" aria-hidden="true"></span>
     <a class="assignment-info" href="{{ route('assignment',$a) }}"><h3>{{ $a->title }}</h3><p>{{ $a->subject }}{{ $a->reference ? ' · '.$a->reference : '' }}</p><div class="assignment-meta">@if($a->question_target)<span>{{ $a->question_target }} questions</span>@elseif($a->minutes)<span>{{ $a->minutes }} min{{ $a->isPractice() ? ' practice' : ' estimate' }}</span>@endif @if($a->requires_photo)<span>Photo required</span>@endif</div></a>
     <div class="assignment-end"><x-status :status="$a->status"/><a href="{{ route('assignment',$a) }}" class="btn {{ $a->status==='submitted' && $parent ? 'review-button' : 'primary' }}" aria-label="Open {{ $a->title }}">{{ $a->status==='submitted' && $parent ? 'Review' : ($current?->id===$a->id ? 'Continue' : 'Open') }}</a>@if($parent)<div class="order-buttons"><button aria-label="Move {{ $a->title }} earlier" @click="move({{ $a->id }},-1)">↑</button><button aria-label="Move {{ $a->title }} later" @click="move({{ $a->id }},1)">↓</button></div>@endif</div>
