@@ -22,6 +22,21 @@ class PracticeGame
         return $assignment->revision + (in_array($assignment->status, ['submitted', 'approved']) ? 0 : 1);
     }
 
+    public static function snapshot(User $student, Assignment $assignment): array
+    {
+        self::access($student, $assignment, true);
+        $state = DailyRoutine::state($student);
+        $question = PracticeAttempt::where('assignment_id', $assignment->id)
+            ->where('student_id', $student->id)
+            ->where('work_session_id', $state['current']['id'] ?? null)
+            ->where('revision', self::round($assignment))
+            ->whereNull('answered_at')->where('interrupted', false)
+            ->where('issued_at', '>=', now()->subSeconds(120))
+            ->latest('id')->first();
+
+        return self::payload($student, $assignment, $question);
+    }
+
     private static function milliseconds(Assignment $assignment, int $revision): int
     {
         return (int) PracticeAttempt::where('assignment_id', $assignment->id)->where('revision', $revision)->sum('credited_ms');

@@ -307,3 +307,212 @@ php artisan schoolday game-update GAME_ID --file=patch.json --key=archive-week-o
 ```
 
 Game JSON accepts `activity_type`, `title`, `instructions`, `minutes`, `question_target`, `fact_min`, `fact_max`, `spelling_words`, and `active`. Example: `{"activity_type":"spelling","title":"Spelling · week two","minutes":5,"spelling_words":["friend","because","different"]}`. Archive with `{"active":false}`. Games are optional by default and have no assignment date. `schoolday status` separates `extra_practice` from required progress. `assignments --date=...` includes optional rounds with `is_extra_practice` and `game_id`, and `assignment ID` / `practice ID` inspect their results. No CLI command plays a round on Noah’s behalf.
+
+## Native student API (v1)
+
+The native API covers Noah’s student workflows. All paths below are relative to `/api/v1/student`. It uses the same database, private worksheet storage, assignment rules, daily routine, and practice engine as the website. Parent planning, approvals, catalog edits, and time corrections use the separate parent API below, or the parent website/CLI.
+
+Deploy the code and run `php artisan migrate --force` to create `device_tokens` and add role scopes before using the APIs. No dependency installation or new service is required. Tests use an isolated database; implementing the API does not deploy it or migrate production.
+
+### Authentication and response format
+
+Send `POST /login` with JSON:
+
+```json
+{"email":"student@example.com","password":"the-student-password","device_name":"Noah’s iPhone"}
+```
+
+A successful login returns HTTP 201:
+
+```json
+{
+  "data": {
+    "token": "a-64-character-opaque-token",
+    "token_type": "Bearer",
+    "expires_at": "2026-12-03T08:00:00+00:00",
+    "device_id": 1,
+    "user": {"id": 2, "name": "Noah", "email": "student@example.com", "role": "student"}
+  }
+}
+```
+
+Store the token in iOS Keychain. Send `Authorization: Bearer <token>` on every subsequent request, **including photo downloads**. Send `Accept: application/json` and `Content-Type: application/json` for JSON bodies; uploads use multipart form data. Browser cookies and CSRF tokens are neither needed nor accepted as API authentication. A native token does not authenticate browser or parent routes.
+
+Tokens expire after 30 days with no sliding extension. Sign in again after expiry. Only a token hash is stored; plaintext is returned once at login. Password changes invalidate all existing tokens. The student API only accepts student accounts; parent accounts sign in through the parent API. Device names are labels; signing in again creates a separate token, even with the same name.
+
+JSON success responses have a `data` envelope, with `meta` alongside it where listed. New tokens, photos, messages, and game rounds return 201; other successful actions return 200. Photo downloads return image bytes. Errors always return JSON, including when `Accept` is omitted: `{"message":"..."}`, with an `errors` field for validation failures. Handle 401 by signing in, 403 as a permission failure, 404 as unavailable/foreign data, 409 by refreshing the current state, 422 as invalid input, and 429 using `Retry-After`. Responses are private and `no-store`; no private storage paths, password hashes, or token hashes are returned.
+
+| Method | Path | Input / result |
+| --- | --- | --- |
+| POST | `/login` | `email`, `password`, `device_name` (max 100 characters); returns token and user |
+| GET | `/me` | Student `id`, `name`, `email`, `role` |
+| GET | `/devices` | Active devices: `id`, `name`, timestamps, and `current`; never credentials |
+| DELETE | `/devices/{device_id}` | Revoke one owned device, including the current one |
+| POST | `/logout` | Revoke the current token |
+| POST | `/logout-all` | Revoke all of this student’s tokens |
+
+Login is limited to six requests per minute per IP. Authenticated requests share a 240/minute student limit. Uploads, messages, and game launches each have separate 30/minute limits; practice actions have a separate 180/minute limit. These counters are independent of the login counter.
+
+### Plan, assignment work, and photos
+
+| Method | Path | Input / result |
+| --- | --- | --- |
+| GET | `/day?date=YYYY-MM-DD` | Date defaults to today. Returns `today`, server `timezone`, student, ordered `assignments`, prior `unfinished` work, `awaiting_review`, `current_assignment`, `progress`, routine report, unread count, and latest 20 activities. Generates recurring work idempotently for the requested date. |
+| GET | `/assignments?date=YYYY-MM-DD&extra=0&limit=100&page=1` | Paginated assignments for a date; `extra=1` selects optional rounds instead of required work. `limit` is 1–100. `meta.has_more` and `meta.next_page` control pagination. |
+| GET | `/assignments/{id}` | Assignment details, feedback, book metadata, and photos, including practice assignments |
+| POST | `/assignments/{id}/start` | `version`; select this assignment as the current activity |
+| PATCH | `/assignments/{id}/draft` | Required `note`, string up to 4,000 characters or `null` to clear |
+| POST | `/assignments/{id}/photos` | One multipart `photo`; returns photo metadata with a relative authenticated `url` |
+| GET | `/photos/{id}` | Private image bytes; attach the bearer header using the configured API host |
+| DELETE | `/photos/{id}` | Delete a current draft photo; submitted revision evidence is preserved |
+| POST | `/assignments/{id}/submit` | Optional `note`; also used for resubmission after corrections |
+
+Assignment resources include `id`, `date`, `subject`, `title`, `instructions`, `reference`, `minutes`, `position`, `requires_photo`, `status`, `note`, `feedback`, `revision`, start/submission/approval timestamps, practice configuration (`activity_type`, `question_target`, factor bounds, spelling words), `is_extra_practice`, `game_id`, book metadata, and photo metadata. Photo metadata includes `id`, `assignment_id`, `name`, `revision`, `created_at`, and `url`. Start/draft/submit responses contain `data.assignment` and `data.routine` with the current routine version.
+
+JPEG, PNG, and WebP uploads are limited to 10 MB each, 10,000 pixels per side, and 20 photos per assignment. Convert iOS HEIC captures to JPEG before upload. Required-photo assignments cannot be submitted without evidence. Submitted/approved work is locked until a parent requests corrections. Submission and parental approval are distinct statuses. Practice assignments submit automatically when their target is reached; the normal submit endpoint cannot bypass the game.
+
+The day’s required progress excludes optional practice rounds. `progress.submitted` and `progress.approved` are separate counts. Prior `unfinished` work includes submitted work awaiting review, matching the web dashboard; the finish-day checklist excludes work already submitted.
+
+### Day controls and synchronization
+
+| Method | Path | Input / result |
+| --- | --- | --- |
+| GET | `/routine?date=YYYY-MM-DD` | Routine report: `version`, requested day and its sessions/corrections, `open_day`, `current`, work/break/idle totals, and totals per assignment |
+| POST | `/routine` | `action` and `version`; actions: `day-start`, `activity-stop`, `break`, `resume`, `day-finish` |
+| GET | `/routine/finish` | Read-only checklist: `remaining`, `awaiting_review_count`, and routine report |
+| POST | `/heartbeat` | Contact update only; returns `last_seen`, `on_break`, unread/submitted counts, outgoing message `read_through`, routine state, and latest relevant activity ID |
+
+Starting work, changing routine state, launching a game, and all practice actions require the latest integer `version`. Read it from the routine state/report; apply the version returned by the successful action. A stale version returns 409 without applying the change. Refresh `/routine` (and the relevant assignment/practice screen) before asking the student to retry. The tablet and iOS app share the same current activity.
+
+`POST /routine` returns `data.version`, `data.day`, `data.current`, and `data.label`. Assignment actions and game launch return that state under `data.routine`; practice actions return it under `data.state`. Day/report responses use `open_day` for the currently open day, which may be earlier than the requested date. An unfinished prior day must be explicitly finished before a new day starts. `day-start` can reopen today while preserving earlier sessions.
+
+Poll heartbeat about every 15 seconds while the app is visible. Heartbeats do not start/stop sessions or prove attention. Work/break totals are reported periods, not verified effort. Leaving the app does not implicitly finish or pause a day: use explicit controls. `/routine/finish` is a read; only `day-finish` changes the day. Finishing with remaining work is allowed and preserves that work.
+
+### Messages and help
+
+| Method | Path | Input / result |
+| --- | --- | --- |
+| GET | `/messages` | Latest 100 family messages, returned oldest first, without acknowledging them |
+| GET | `/messages?after=ID&limit=100` | Next messages after a cursor, oldest first; use `meta.next_after` to continue |
+| GET | `/messages?before=ID&limit=100` | Older history, returned oldest first; use `meta.next_before` to continue backward |
+| POST | `/messages` | `body` (max 4,000 characters), optional owned `assignment_id`, optional boolean `help` |
+| POST | `/messages/read` | `through`: an ID in this student’s conversation; acknowledges incoming messages through that ID, preserving newer unread messages |
+
+Message resources include ID, body, help flag, assignment ID/title, sender ID/name/role, `is_mine`, creation and read timestamps. Listing metadata includes `has_more`, `next_after`, `next_before`, and `unread`. Use either `after` or `before`, never both. Read acknowledgments are explicit; fetching the plan or messages leaves unread counts unchanged. A help request is a message with `help: true` and, when applicable, the assignment ID.
+
+### Games and practice
+
+| Method | Path | Input / result |
+| --- | --- | --- |
+| GET | `/games` | Active library games with configuration, `rounds_count`, `latest_round_id`, and `meta.routine` |
+| POST | `/games/{id}/play` | `version`; creates a new optional assignment/round and selects it as the current activity. Returns `data.assignment` and `data.routine`. |
+| GET | `/practice/{assignment_id}` | Assignment, read-only current `practice` snapshot, and full `report` including per-round results (and spelling word/mode summaries) |
+| POST | `/practice/{assignment_id}` | `action`, `version`, and action-specific fields below |
+
+Practice action responses contain `data.state`, `running`, `question`, `result`, `complete`, and `summary`. A `listen` action also returns `speech`. Summary includes target, current round, and prior-round statistics. Required practice assignments use these same endpoints. Optional rounds retain their own immutable configuration and history; archived games cannot launch new rounds, while existing rounds remain accessible.
+
+| Action | Additional input | Behavior |
+| --- | --- | --- |
+| `start` | None | Start/resume this practice and issue a fresh question |
+| `next` | Optional previous `attempt_id` and `feedback_ms` (0–5,000) | Credit brief prior-answer feedback once, then issue the next question |
+| `answer` | `attempt_id`, `answer`, `response_ms` (100–120,000) | Grade on the server; integer answer for multiplication, string for spelling |
+| `pause` | None | Stop practice activity; preserve completed answers and credit |
+| `help` | `attempt_id` | Record chart use for multiplication or a peek for spelling |
+| `cover` | `attempt_id` | Hide the studied/peeked spelling word |
+| `listen` | `attempt_id` | Record audio playback and return `speech` for native text-to-speech |
+
+Multiplication questions contain `id`, `left`, and `right`. Render chart help locally, but call `help` when it is opened so assisted answers stay out of independent recall speed. Spelling rotates `study`, `listen`, and `choose`. Its question contains `id`, `mode`, visibility-filtered `word`, `covered`, `choices`, `audio_plays`, and `can_answer`. Use native speech synthesis for `speech`; cover the study/peeked word or play the listen/choose audio before answering. Results contain correctness, assistance, and the correct answer. The client must not grade or mark work complete itself.
+
+Only recorded answers and brief feedback count toward the game target; background/idle time does not. A question older than two minutes or from an interrupted session must be replaced with a fresh question. An identical answer retry for the same attempt is accepted without double counting; a different answer retry conflicts. Reloading the practice snapshot does not issue a question, reveal a covered word, or record assistance/audio playback.
+
+This is an online API. Push notifications and offline synchronization are not implemented. There is no generic idempotency key for messages, photos, or token creation: after an uncertain network outcome, reconcile against current server data before creating another record. Routine/game-launch retries with a stale version conflict, and repeated submissions do not increment a submitted revision. Do not silently replace stale versions and replay student actions.
+
+
+## Native parent API (v1)
+
+All parent paths are relative to `/api/v1/parent`. This covers the current parent website workflows, plus atomic bulk planning, incremental activity history, and fact reports. This application still represents **one family and one configured student**; it is not a multi-family authorization system. Parents operate on the student selected by the existing `ParentActions::student()` service. Account provisioning and password resets remain trusted host CLI operations.
+
+### Parent authentication
+
+Use the same login body and response format as the student API, but send `POST /api/v1/parent/login` with a parent account. Store the bearer token in Keychain. The same private response headers, 30-day expiry, password-change invalidation, and JSON error/status conventions apply. Login has its own six-per-minute IP counter; authenticated parent traffic has a separate 240-per-minute account counter, with parent messages separately limited to 30/minute.
+
+| Method | Path | Behavior |
+| --- | --- | --- |
+| POST | `/login` | `email`, `password`, `device_name`; issues a parent token (201) |
+| GET | `/me` | Current parent identity |
+| GET | `/devices` | This parent's active devices; never Noah's or another parent's credentials |
+| DELETE | `/devices/{id}` | Revoke one owned device |
+| POST | `/logout` | Revoke the current token |
+| POST | `/logout-all` | Revoke all of this parent's tokens |
+
+Tokens record the role at issuance. Both the token role and current account role must match the requested API. Student tokens cannot access parent routes, parent tokens cannot perform student actions, and changing an account role does not elevate an existing token. The role migration preserves existing student tokens by defaulting old records to `student`. Run all pending migrations when deploying this update.
+
+### Monitoring and review
+
+| Method | Path | Input / result |
+| --- | --- | --- |
+| GET | `/day?date=YYYY-MM-DD` | Same plan/report shape as the student day endpoint, for the configured student. Unread counts belong to the authenticated parent. |
+| GET | `/reviews?limit=100&page=1` | Required assignments awaiting review, ordered by submission time; excludes optional rounds. `meta.has_more` and `meta.next_page` control pagination. |
+| GET | `/assignments?date=YYYY-MM-DD&extra=0&limit=100&page=1` | Plan listing; `extra=1` selects extra rounds. Same pagination as student listing. |
+| GET | `/assignments/{id}` | Assignment, student note, feedback, submission revision, and private photo metadata. `meta.history` contains assignment activity history. |
+| GET | `/photos/{id}` | Private worksheet image bytes; attach the parent bearer token. Parent assignment/photo resources return parent API photo URLs. |
+| POST | `/assignments/{id}/review` | Required `revision` and `decision` (`approved` or `needs_changes`); optional `feedback`, required for corrections. Returns the reviewed assignment. |
+| GET | `/activity?after=ID&limit=100` | Relevant student/assignment and current parent activity. Without `after`, returns latest history; with `after`, returns the next batch. Results are oldest first with `meta.has_more` and `meta.next_after`. |
+| POST | `/heartbeat` | Current student contact, routine, unread/review counts, message read receipt cursor, and activity cursor. Does **not** update Noah's contact or start/stop activity. |
+| GET | `/practice/{assignment_id}` | Read-only practice report plus assignment; multiplication also returns fact history. No questions are issued and no answers, assistance, audio plays, or time are recorded. |
+| GET | `/facts` | Multiplication accuracy, independent recall speed, chart assistance, and drill flags across recorded history |
+
+Inspect the current assignment note, revision, and relevant photos before reviewing. Supply that exact revision; stale reviews return 409 without changing status or sending feedback. A correction requires nonblank feedback. Successful reviews record the parent's identity and send the same feedback message as the website. Inspection/listing does not acknowledge messages. Submitted work and approved work remain separate states. Contact and elapsed sessions are not proof of attention or completion.
+
+### Planning and reusable configuration
+
+| Method | Path | Input / result |
+| --- | --- | --- |
+| POST | `/assignments` | Assignment fields below; creates required work (201) |
+| PATCH | `/assignments/{id}` | Partial assignment fields; only unstarted work is editable |
+| POST | `/plan` | `date` plus `assignments` array (1–100 items); creates the entire plan atomically (201). The top-level date applies to every item. Omitted positions append after existing required work. |
+| POST | `/copy` | `from` and `to` dates; copies required assignments as new work (201), preserving original text and practice configuration, excluding extra rounds |
+| POST | `/reorder` | `date` and complete ordered `ids` array for required work on that date; extra rounds are excluded |
+| GET | `/books` | All books, including archived records, ordered active first |
+| POST | `/books` | Book fields below; creates a book (201) |
+| PATCH | `/books/{id}` | Partial book fields; `active: false` archives it |
+| GET | `/games` | All games, including archived records, configurations, active flags, round counts, and latest round IDs |
+| POST | `/games` | Game fields below; creates a library game (201) |
+| PATCH | `/games/{id}` | Partial game fields; `active: false` archives it |
+| GET | `/recurrences` | All recurrence rules, including stopped rules; returns start/end dates, weekdays, assignment configuration, and active flag |
+| POST | `/recurrences` | Assignment fields plus `weekdays` and optional `ends_on`; `date` is the start date (201) |
+| POST | `/recurrences/{id}/stop` | Stop future generation while preserving existing assignments |
+
+Assignment fields: `date`, `activity_type`, `book_id`, `subject`, `title`, `instructions`, `reference`, `minutes`, `requires_photo`, `position`, `fact_min`, `fact_max`, `question_target`, and `spelling_words`. A normal assignment needs date, subject, title, and instructions. Photo requirement defaults false and position defaults zero for a single create. A `book_id` fills omitted book defaults; specify the actual lesson/reference because it does not advance automatically. Multiplication/spelling assignments have the same targets, bounds, word normalization, and defaults as the CLI. Spelling words accept an array or one-per-line string. Partial updates preserve unspecified fields. Status, student ownership, revisions, approval, and arbitrary fields cannot be set through planning inputs.
+
+Example bulk plan:
+
+```json
+{
+  "date": "2026-11-04",
+  "assignments": [
+    {"subject":"Reading","title":"Chapter 4","instructions":"Read the chapter and tell Dad what happened."},
+    {"activity_type":"multiplication","fact_min":2,"fact_max":6,"question_target":20},
+    {"activity_type":"spelling","spelling_words":["friend","because","another"],"question_target":15}
+  ]
+}
+```
+
+Book fields: `subject`, `title`, optional `publisher`, `level`, `reference`, `instructions`, `minutes`, `requires_photo`, `active`. Game fields: `activity_type` (`multiplication` or `spelling`), `title`, `instructions`, `minutes`, `question_target`, `fact_min`, `fact_max`, `spelling_words`, `active`. Book edits preserve existing assignment text; game edits preserve existing round snapshots. Recurrence weekdays use ISO day numbers 1–7 (Monday–Sunday); optional end date cannot precede the start. Assignment deletion, recurrence editing, and new game mechanics are not existing parent features and are not exposed by this API.
+
+### Parent messages
+
+`GET /messages`, `GET /messages?after=ID`, `GET /messages?before=ID`, and `POST /messages/read` use the same pagination, envelopes, and explicit `through` acknowledgment as the student API. They operate on the configured student's family conversation, with `is_mine`, unread counts, and sender identity relative to the signed-in parent. `POST /messages` accepts `body` and optional owned `assignment_id`; the server supplies the parent sender identity. Another parent's device sessions remain private even though parents share the family conversation.
+
+### Audited timeline corrections
+
+| Method | Path | Input / result |
+| --- | --- | --- |
+| GET | `/timeline?date=YYYY-MM-DD` | Routine report with current version, day ID, sessions/IDs, totals, and correction audit history |
+| POST | `/timeline/{day_id}/periods` | Add a missing period: `version`, `kind` (`work`, `break`, `idle`), `started_at`, `ended_at`, `reason`; work requires an owned `assignment_id` |
+| PATCH | `/timeline/{day_id}/periods/{session_id}` | Correct an existing period: `version`, `started_at`, `ended_at`, `reason`, optional `kind` and `assignment_id` |
+| PATCH | `/timeline/{day_id}` | Correct day boundaries: `version`, `started_at`, optional `finished_at`, and `reason` |
+
+Use explicit-offset ISO 8601 timestamps and the report's current version. Successful correction responses return the updated report and version. Overlapping/out-of-bounds periods fail with 422; stale versions fail with 409. Sessions must belong to the specified day, and all records must belong to the configured student. Each successful correction preserves before/after values, reason, and editor. These actions do not impersonate Noah's day/activity buttons or infer missing work time. A closed day cannot be reopened through a correction.
+
+Bulk planning is atomic: one invalid item rolls back the whole plan and its audit entries. As with the student API, parent creates, copy, messages, and configuration writes have no generic retry/idempotency key: reconcile server state after uncertain network outcomes before creating again. Reviews require the inspected submission revision; timeline corrections require the read routine version. Offline synchronization and push delivery remain unimplemented.

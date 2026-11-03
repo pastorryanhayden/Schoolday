@@ -12,9 +12,9 @@ use App\Models\User;
 use App\Services\DailyRoutine;
 use App\Services\ParentActions;
 use App\Services\School;
+use App\Services\StudentActions;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
@@ -107,37 +107,14 @@ class SchoolController extends Controller
 
     public function draft(Request $r, Assignment $assignment)
     {
-        $this->student($r, $assignment);
-        $data = $r->validate(['note' => 'nullable|string|max:4000']);
-        DB::transaction(function () use ($assignment, $data) {
-            $fresh = Assignment::lockForUpdate()->findOrFail($assignment->id);
-            $this->editable($fresh);
-            $fresh->update($data);
-        });
+        StudentActions::draft($r->user(), $assignment, $r->only('note'));
 
         return response()->json(['saved' => true]);
     }
 
     public function upload(Request $r, Assignment $assignment)
     {
-        $this->student($r, $assignment);
-        $this->editable($assignment);
-        $r->validate(['photo' => 'required|image|mimes:jpg,jpeg,png,webp|max:10240|dimensions:max_width=10000,max_height=10000']);
-        abort_if($assignment->photos()->count() >= 20, 422, 'Limit of 20 photos per assignment.');
-        $path = $r->file('photo')->store('worksheets', 'local');
-        abort_unless($path, 503, 'Photo storage failed. Please retry.');
-        try {
-            $photo = DB::transaction(function () use ($assignment, $path, $r) {
-                $fresh = Assignment::lockForUpdate()->findOrFail($assignment->id);
-                $this->editable($fresh);
-                abort_if($fresh->photos()->count() >= 20, 422, 'Limit of 20 photos per assignment.');
-
-                return $fresh->photos()->create(['path' => $path, 'name' => mb_substr($r->file('photo')->getClientOriginalName(), 0, 200), 'revision' => $fresh->revision + 1]);
-            });
-        } catch (\Throwable $e) {
-            Storage::disk('local')->delete($path);
-            throw $e;
-        }
+        $photo = StudentActions::upload($r->user(), $assignment, $r->file('photo'));
 
         return response()->json(['id' => $photo->id, 'url' => route('photo', $photo), 'name' => $photo->name]);
     }
@@ -154,37 +131,14 @@ class SchoolController extends Controller
 
     public function removePhoto(Request $r, Photo $photo)
     {
-        $a = Assignment::findOrFail($photo->assignment_id);
-        $this->student($r, $a);
-        $this->editable($a);
-        DB::transaction(function () use ($a, $photo) {
-            $fresh = Assignment::lockForUpdate()->findOrFail($a->id);
-            $this->editable($fresh);
-            abort_unless($photo->revision > $fresh->revision, 409, 'Photos from a submitted revision are preserved.');
-            $photo->delete();
-        });
-        Storage::disk('local')->delete($photo->path);
+        StudentActions::removePhoto($r->user(), $photo);
 
         return response()->json(['removed' => true]);
     }
 
     public function submit(Request $r, Assignment $assignment)
     {
-        $this->student($r, $assignment);
-        abort_if($assignment->isPractice(), 409, 'Complete the practice target in the game to submit it for review.');
-        $data = $r->validate(['note' => 'nullable|string|max:4000']);
-        DB::transaction(function () use ($r, $assignment, $data) {
-            $student = DailyRoutine::lock($r->user());
-            $a = Assignment::lockForUpdate()->findOrFail($assignment->id);
-            $this->editable($a);
-            if ($a->requires_photo && ! $a->photos()->exists()) {
-                throw ValidationException::withMessages(['photo' => 'Add at least one worksheet photo before submitting.']);
-            }
-            DailyRoutine::submitted($student, $a);
-            $kind = $a->revision ? 'resubmission' : 'submission';
-            $a->update(['status' => 'submitted', 'note' => $data['note'] ?? $a->note, 'submitted_at' => now(), 'revision' => $a->revision + 1]);
-            School::record($r->user(), $kind, ucfirst($kind).': '.$a->title.' (revision '.$a->revision.')'.($a->note ? ' — '.$a->note : ''), $a);
-        });
+        StudentActions::submit($r->user(), $assignment, $r->only('note'));
 
         return redirect()->route('assignment', $assignment)->with('success', 'Assignment finished. Dad will review your work next.');
     }
@@ -266,8 +220,7 @@ class SchoolController extends Controller
         if ($r->user()->role === 'parent') {
             ParentActions::message($r->user(), $data['body'], isset($data['assignment_id']) ? (int) $data['assignment_id'] : null);
         } else {
-            Message::create($data + ['sender_id' => $r->user()->id, 'student_id' => $student->id]);
-            School::record($r->user(), ! empty($data['help']) ? 'help' : 'message', ! empty($data['help']) ? 'Asked Dad for help' : 'Sent a message', $a ?? null);
+            StudentActions::message($r->user(), $data);
         }
 
         return back()->with('success', 'Message sent.');
